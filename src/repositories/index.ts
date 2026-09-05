@@ -11,6 +11,7 @@ export {
   userRepository,
   UserRepository
 } from './settingRepository';
+export { academicYearRepository, AcademicYearRepository } from './academicYearRepository';
 export type { CreateClassInput } from './classRepository';
 export type { CreateStudentInput } from './studentRepository';
 export type {
@@ -21,3 +22,4 @@ export type {
   RecordAttendanceInput
 } from './attendanceRepository';
 export type { CreateUserInput } from './settingRepository';
+export type { CreateAcademicYearInput } from './academicYearRepository';

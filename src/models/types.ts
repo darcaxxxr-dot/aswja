@@ -113,4 +113,5 @@ export interface AcademicYear {
   endDate: string;
   isActive: boolean;
   createdAt: number;
+  updatedAt: number;
 }

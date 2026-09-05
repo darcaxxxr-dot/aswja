@@ -27,10 +27,10 @@ export class SmartFaceDB extends Dexie {
   constructor() {
     super('smartface_attendance');
 
-    this.version(1).stores({
+    this.version(2).stores({
       schools: 'id, name, createdAt',
-      academicYears: 'id, schoolId, name, isActive, startDate, endDate',
-      classes: 'id, schoolId, academicYearId, grade, name, createdAt',
+      academicYears: 'id, schoolId, name, isActive, startDate, endDate, createdAt, updatedAt',
+      classes: 'id, schoolId, academicYearId, grade, name, createdAt, [schoolId+grade+name]',
       students: 'id, schoolId, nis, classId, status, name, createdAt, [schoolId+classId], [schoolId+nis]',
       faceProfiles: 'id, studentId, modelVersion, createdAt',
       attendanceSessions: 'id, schoolId, classId, date, status, createdAt, [schoolId+classId+date]',

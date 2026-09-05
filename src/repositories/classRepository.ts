@@ -21,7 +21,15 @@ export class ClassRepository {
     return db.classes.get(id);
   }
 
+  async findByGradeAndName(grade: string, name: string): Promise<ClassRoom | undefined> {
+    return db.classes.where('grade').equals(grade).and((c) => c.name === name).first();
+  }
+
   async create(input: CreateClassInput): Promise<ClassRoom> {
+    const existing = await this.findByGradeAndName(input.grade.trim(), input.name.trim());
+    if (existing) {
+      throw new Error(`Kelas "${input.name}" sudah ada di tingkat ${input.grade}`);
+    }
     const ts = now();
     const row: ClassRoom = {
       id: generateId('CLS'),
@@ -39,6 +47,12 @@ export class ClassRepository {
   async update(id: string, patch: Partial<Omit<ClassRoom, 'id' | 'schoolId' | 'createdAt'>>): Promise<ClassRoom> {
     const existing = await db.classes.get(id);
     if (!existing) throw new Error(`Class ${id} not found`);
+    const grade = patch.grade ?? existing.grade;
+    const name = patch.name ?? existing.name;
+    const duplicate = await db.classes.where('grade').equals(grade).and((c) => c.name === name && c.id !== id).first();
+    if (duplicate) {
+      throw new Error(`Kelas "${name}" sudah ada di tingkat ${grade}`);
+    }
     const updated: ClassRoom = { ...existing, ...patch, updatedAt: now() };
     await db.classes.put(updated);
     return updated;
