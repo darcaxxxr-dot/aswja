@@ -15,7 +15,7 @@ export async function renderSetup(root: HTMLElement): Promise<void> {
   bgEl.style.display = 'block';
 
   root.innerHTML = `
-    <div class="aswja-page" style="max-width:520px;">
+    <div class="aswja-page">
       <div style="text-align:center;margin-bottom:24px;">
         <h1 class="aswja-brand-title" style="font-size:48px;">${BRAND.name}</h1>
         <p class="aswja-brand-subtitle">Setup Superuser (Backdoor)</p>
