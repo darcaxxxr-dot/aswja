@@ -1,0 +1,1 @@
+export { renderDbTest } from './dbTestPage';

@@ -1,0 +1,1 @@
+export { renderAttendance } from './attendancePage';

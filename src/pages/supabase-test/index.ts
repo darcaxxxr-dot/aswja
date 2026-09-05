@@ -1,0 +1,1 @@
+export { renderSupabaseTest } from './supabaseTestPage';

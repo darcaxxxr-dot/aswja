@@ -1,0 +1,1 @@
+export { renderDashboard } from './dashboardPage';

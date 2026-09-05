@@ -1,0 +1,1 @@
+export { renderCameraTest } from './cameraTestPage';

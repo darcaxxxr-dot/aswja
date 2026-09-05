@@ -1,0 +1,1 @@
+export { renderStudents } from './studentsPage';

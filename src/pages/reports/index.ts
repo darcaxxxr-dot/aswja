@@ -1,0 +1,1 @@
+export { renderReports } from './reportsPage';

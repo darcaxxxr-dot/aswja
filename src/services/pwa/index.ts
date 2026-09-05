@@ -1,0 +1,1 @@
+export { installPromptService } from './installPrompt';

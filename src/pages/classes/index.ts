@@ -1,0 +1,1 @@
+export { renderClasses } from './classesPage';

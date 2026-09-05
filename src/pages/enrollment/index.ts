@@ -1,0 +1,1 @@
+export { renderEnrollment } from './enrollmentPage';
