@@ -111,10 +111,11 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
 
   const refreshStudents = async () => {
     students = await studentRepository.list();
-    renderTable();
+    await renderTable();
   };
 
   const renderTable = async () => {
+    if (!tbody || !filterClass || !filterStatus || !studentTotal || !pageInfo) return;
     const filterClsId = filterClass.value;
     const filterStat = filterStatus.value;
     let filtered = students;
@@ -267,7 +268,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     }
   };
 
-  btnStart.addEventListener('click', async () => {
+  if (btnStart) btnStart.addEventListener('click', async () => {
     try {
       await ensureCameraAndModel();
     } catch {
@@ -275,7 +276,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     }
   });
 
-  btnSwitch.addEventListener('click', async () => {
+  if (btnSwitch) btnSwitch.addEventListener('click', async () => {
     try {
       await cameraService.switchCamera(video);
       log('Kamera di-switch.');
@@ -285,7 +286,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     }
   });
 
-  btnStop.addEventListener('click', async () => {
+  if (btnStop) btnStop.addEventListener('click', async () => {
     await cameraService.stop();
     overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
     log('Kamera dihentikan.');
@@ -296,7 +297,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     enrollStep.style.display = 'none';
   });
 
-  btnLoad.addEventListener('click', async () => {
+  if (btnLoad) btnLoad.addEventListener('click', async () => {
     try {
       btnLoad.disabled = true;
       log('Memuat model...');
@@ -310,8 +311,8 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     }
   });
 
-  filterClass.addEventListener('change', () => void renderTable());
-  filterStatus.addEventListener('change', () => void renderTable());
+  if (filterClass) filterClass.addEventListener('change', () => void renderTable());
+  if (filterStatus) filterStatus.addEventListener('change', () => void renderTable());
 
   await refreshClasses();
   await refreshStudents();
