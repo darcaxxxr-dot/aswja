@@ -15,7 +15,7 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
 
   root.innerHTML = `
     <div class="aswja-page" style="max-width:480px;">
-      <div class="center" style="margin-bottom:24px;">
+      <div style="text-align:center;margin-bottom:24px;">
         <h1 class="aswja-brand-title">${BRAND.name}</h1>
         <p class="aswja-brand-subtitle">${BRAND.tagline}</p>
       </div>

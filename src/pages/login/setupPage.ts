@@ -16,7 +16,7 @@ export async function renderSetup(root: HTMLElement): Promise<void> {
 
   root.innerHTML = `
     <div class="aswja-page" style="max-width:520px;">
-      <div class="center" style="margin-bottom:24px;">
+      <div style="text-align:center;margin-bottom:24px;">
         <h1 class="aswja-brand-title" style="font-size:48px;">${BRAND.name}</h1>
         <p class="aswja-brand-subtitle">Setup Superuser (Backdoor)</p>
       </div>
@@ -27,7 +27,7 @@ export async function renderSetup(root: HTMLElement): Promise<void> {
           <div class="glass-icon-fallback" style="display:none;">${BRAND.name.charAt(0)}</div>
         </div>
 
-        <div class="center" style="margin-bottom:16px;">
+        <div style="text-align:center;margin-bottom:16px;">
           <span class="aswja-tagline">Buat akun SUPERUSER pertama untuk mengaktifkan sistem login.</span>
         </div>
 
