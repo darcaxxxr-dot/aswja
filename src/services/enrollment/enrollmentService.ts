@@ -1,5 +1,5 @@
 import { cameraService } from '@services/camera';
-import { faceEnrollmentService, faceRecognitionService, faceModelLoader, type EnrollmentPose } from '@services/face';
+import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, type EnrollmentPose } from '@services/face';
 import { studentRepository, faceProfileRepository } from '@repositories/index';
 import { settingRepository } from '@repositories/index';
 import type { FaceProfile, Student } from '@models/types';
@@ -45,7 +45,9 @@ export class EnrollmentService {
     const result: Array<Student & { profileCount: number }> = [];
     for (const s of all) {
       const profiles = await faceProfileRepository.listForStudent(s.id);
-      if (profiles.length > 0) result.push({ ...s, profileCount: profiles.length });
+      if (profiles.length > 0) {
+        result.push({ ...s, profileCount: profiles.length });
+      }
     }
     return result;
   }
@@ -59,8 +61,22 @@ export class EnrollmentService {
     await this.ensureCameraAndModel(video);
     onProgress?.(`Mulai enrollment untuk ${student.name}...`, 0);
 
+    const livenessChallenge = (await settingRepository.get('face.livenessChallenge')) ?? 'blink';
+    onProgress?.('Verifikasi liveness...', 5);
+    try {
+      const livenessResult = await livenessService.runChallenge(video, livenessChallenge as 'blink' | 'turn_left' | 'turn_right', (_msg) => {
+        onProgress?.(`Liveness: ${_msg}`, 5);
+      });
+      if (!livenessResult.success) {
+        throw new FaceError(`Liveness gagal: ${livenessResult.reason ?? 'Tidak terdeteksi hidup'}`);
+      }
+    } catch (err) {
+      if (err instanceof FaceError) throw err;
+      throw new FaceError('Liveness check gagal. Coba lagi.');
+    }
+
     const unsub = faceEnrollmentService.onProgress((p) => {
-      onProgress?.(`Pose ${p.index}/${p.total}: ${p.pose} (quality=${p.qualityScore.toFixed(2)})`, (p.index / p.total) * 100);
+      onProgress?.(`Pose ${p.index}/${p.total}: ${p.pose} (quality=${p.qualityScore.toFixed(2)})`, 10 + (p.index / p.total) * 85);
     });
 
     let record;

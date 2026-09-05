@@ -38,19 +38,40 @@ export class FaceMatchingService {
   findBestMatch(
     queryEmbedding: number[],
     database: EmbeddingRecord[],
-    threshold: number = 0.8
+    options: { threshold?: number; useCosine?: boolean; minQuality?: number } = {}
   ): { matched: boolean; candidate: FaceMatchCandidate | null; topCandidates: FaceMatchCandidate[] } {
     if (database.length === 0) {
       return { matched: false, candidate: null, topCandidates: [] };
     }
 
-    const candidates: FaceMatchCandidate[] = database.map((rec) => {
-      const dist = FaceMatchingService.euclideanDistance(queryEmbedding, rec.embedding);
+    const useCosine = options.useCosine ?? true;
+    const baseThreshold = options.threshold ?? 0.75;
+    const minQuality = options.minQuality ?? 0;
+
+    const filteredDb =
+      minQuality > 0
+        ? database.filter((rec) => (rec.qualityScore ?? 0) >= minQuality)
+        : database;
+
+    if (filteredDb.length === 0) {
+      return { matched: false, candidate: null, topCandidates: [] };
+    }
+
+    const adaptiveThreshold = FaceMatchingService.computeAdaptiveThreshold(filteredDb.length, baseThreshold);
+
+    const candidates: FaceMatchCandidate[] = filteredDb.map((rec) => {
+      let score = 0;
+      if (useCosine) {
+        score = FaceMatchingService.cosineSimilarity(queryEmbedding, rec.embedding);
+      } else {
+        const dist = FaceMatchingService.euclideanDistance(queryEmbedding, rec.embedding);
+        score = this.distanceToScore(dist);
+      }
       return {
         id: rec.id,
         label: rec.label,
-        score: this.distanceToScore(dist),
-        distance: Math.round(dist * 1000) / 1000
+        score: Math.round(score * 1000) / 1000,
+        distance: useCosine ? 0 : Math.round(FaceMatchingService.euclideanDistance(queryEmbedding, rec.embedding) * 1000) / 1000
       };
     });
 
@@ -58,10 +79,16 @@ export class FaceMatchingService {
     const best = candidates[0];
 
     return {
-      matched: best.score >= threshold,
+      matched: best.score >= adaptiveThreshold,
       candidate: best,
       topCandidates: candidates.slice(0, 3)
     };
+  }
+
+  private static computeAdaptiveThreshold(dbSize: number, baseThreshold: number): number {
+    if (dbSize <= 1) return baseThreshold;
+    const lift = Math.min(0.08, Math.log10(dbSize) * 0.015);
+    return Math.min(0.95, baseThreshold + lift);
   }
 
   averageEmbeddings(embeddings: number[][]): number[] {

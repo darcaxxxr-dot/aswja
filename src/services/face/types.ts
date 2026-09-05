@@ -44,6 +44,8 @@ export interface EnrollmentSample {
   pose: 'front' | 'left' | 'right' | 'up' | 'down';
   embedding: number[];
   qualityScore: number;
+  sharpness: number;
+  lighting: number;
   capturedAt: number;
 }
 

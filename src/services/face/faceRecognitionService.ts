@@ -11,6 +11,8 @@ import type {
 
 export interface RecognizeOptions {
   threshold?: number;
+  useCosine?: boolean;
+  minQuality?: number;
   withLandmarks?: boolean;
   inputSize?: number;
   scoreThreshold?: number;
@@ -39,7 +41,9 @@ export class FaceRecognitionService {
     options: RecognizeOptions = {}
   ): Promise<RecognitionResult | null> {
     if (video.readyState < 2) return null;
-    const threshold = options.threshold ?? 0.8;
+    const threshold = options.threshold ?? 0.75;
+    const useCosine = options.useCosine ?? true;
+    const minQuality = options.minQuality ?? 0;
 
     await this.ensureReady();
     const startedAt = performance.now();
@@ -50,7 +54,11 @@ export class FaceRecognitionService {
     });
     if (!result) return null;
 
-    const match = faceMatchingService.findBestMatch(result.embedding, database, threshold);
+    const match = faceMatchingService.findBestMatch(result.embedding, database, {
+      threshold,
+      useCosine,
+      minQuality
+    });
 
     return {
       matched: match.matched,
@@ -65,12 +73,20 @@ export class FaceRecognitionService {
   async recognizeFromEmbedding(
     embedding: number[],
     database: EmbeddingRecord[],
-    threshold: number = 0.8
+    options: { threshold?: number; useCosine?: boolean; minQuality?: number } = {}
   ): Promise<RecognitionResult> {
     if (embedding.length === 0) {
       throw new FaceError('Embedding kosong, tidak dapat melakukan recognition.');
     }
-    const match = faceMatchingService.findBestMatch(embedding, database, threshold);
+    const threshold = options.threshold ?? 0.75;
+    const useCosine = options.useCosine ?? true;
+    const minQuality = options.minQuality ?? 0;
+
+    const match = faceMatchingService.findBestMatch(embedding, database, {
+      threshold,
+      useCosine,
+      minQuality
+    });
     return {
       matched: match.matched,
       candidate: match.candidate,

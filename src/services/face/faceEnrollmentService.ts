@@ -52,7 +52,9 @@ export class FaceEnrollmentService {
     const quality = faceEmbeddingService.computeQualityScore(
       result.detection,
       video.videoWidth,
-      video.videoHeight
+      video.videoHeight,
+      result.sharpness,
+      result.lighting
     );
 
     if (quality < minQualityScore) {
@@ -65,6 +67,8 @@ export class FaceEnrollmentService {
       pose,
       embedding: result.embedding,
       qualityScore: quality,
+      sharpness: result.sharpness,
+      lighting: result.lighting,
       capturedAt: Date.now()
     };
   }

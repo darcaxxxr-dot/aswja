@@ -47,10 +47,11 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
         </div>
 
         <div class="camera-stage" id="stage" style="aspect-ratio: 4/3;">
-          <div class="camera-placeholder">
+          <div class="camera-placeholder" id="camera-placeholder" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(15,23,42,0.85);color:#cbd5e1;text-align:center;padding:24px;transition:opacity 200ms ease;">
             <div style="font-size:32px;">📸</div>
             <div>Aktifkan kamera untuk mulai enrollment.</div>
           </div>
+          <video id="camera-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:none;"></video>
           <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
         </div>
       </section>
@@ -77,11 +78,10 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     </div>
   `;
 
-  const stage = root.querySelector<HTMLDivElement>('#stage')!;
-  const video = document.createElement('video');
+  const video = root.querySelector<HTMLVideoElement>('#camera-video')!;
+  const placeholder = root.querySelector<HTMLDivElement>('#camera-placeholder')!;
   const overlay = root.querySelector<HTMLCanvasElement>('#overlay')!;
   const overlayCtx = overlay.getContext('2d')!;
-  stage.insertBefore(video, overlay);
 
   const btnStart = root.querySelector<HTMLButtonElement>('#btn-start')!;
   const btnStop = root.querySelector<HTMLButtonElement>('#btn-stop')!;
@@ -210,7 +210,6 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     let detectionRaf: number | null = null;
     const drawDetection = () => {
       if (!isEnrolling) return;
-      // ambil snapshot dari video untuk deteksi visual saja
       void faceModelLoader;
       detectionRaf = window.setTimeout(drawDetection, 100);
     };
@@ -256,6 +255,9 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
       await cameraService.start(video);
       log('Kamera aktif.');
       setCamButtons(true);
+      placeholder.style.opacity = '0';
+      setTimeout(() => { placeholder.style.display = 'none'; }, 200);
+      video.style.display = 'block';
     } catch (err: unknown) {
       const msg = err instanceof CameraError ? err.message : (err as Error).message;
       log(`ERROR kamera: ${msg}`);
@@ -277,6 +279,9 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
     log('Kamera dihentikan.');
     setCamButtons(false);
+    placeholder.style.display = 'flex';
+    placeholder.style.opacity = '1';
+    video.style.display = 'none';
   });
 
   btnLoad.addEventListener('click', async () => {
