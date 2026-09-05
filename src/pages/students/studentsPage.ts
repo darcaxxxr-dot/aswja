@@ -330,6 +330,7 @@ export async function renderStudents(root: HTMLElement): Promise<void> {
     const nis = root.querySelector<HTMLInputElement>('#f-nis')!.value.trim();
     const nisn = root.querySelector<HTMLInputElement>('#f-nisn')!.value.trim() || undefined;
     const name = root.querySelector<HTMLInputElement>('#f-name')!.value.trim();
+    const gender = root.querySelector<HTMLSelectElement>('#f-gender')!.value as Gender;
     const classId = root.querySelector<HTMLSelectElement>('#f-class')!.value;
     if (!nis || !name || !classId) {
       log('⚠ NIS, nama, dan kelas wajib diisi.');
@@ -340,130 +341,72 @@ export async function renderStudents(root: HTMLElement): Promise<void> {
       showDuplicateModal(existing);
       return;
     }
-    
-    // Upload CSV and collect statistics
-    const lines = ['NIS,NISN,Nama,L/P,Kelas'];
-    for (const c of allClasses) {
-      for (let i = 1; i <= 3; i++) {
-        const sampleNis = `${c.grade.replace(/\D/g, '')}${String(i).padStart(2, '0')}000${i}`;
-        const sampleName = `[Siswa ${i} - ${c.name}]`;
-        lines.push(`${sampleNis},,${sampleName},L,${c.name}`);
-      }
-    }
-    const csv = lines.join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `template-siswa-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    // Collect upload statistics
-    let successCount = lines.length - 1; // exclude header
-    let skippedCount = 0;
-    let errors: string[] = [];
-    
     try {
-      const rows = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv }).then(res => res.json());
-      const totalRows = rows.length;
-      
-      // Simulate processing - in real scenario, this would be actual data
-      // For now, we assume all rows are processed successfully
-      successCount = totalRows;
-      
-      // Show confirmation modal
-      const overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);backdrop-filter:blur(4px);padding:16px;';
-      overlay.innerHTML = `
-        <div class="glass" style="max-width:400px;width:100%;padding:24px;box-shadow:var(--shadow-lg);">
-          <h3 style="margin:0 0 4px;color:var(--color-danger);">✅ Bulk Add Confirm</h3>
-          <p class="muted" style="margin:0 0 16px;font-size:13px;">
-            Bulk add ${successCount} row(d(s) dari file CSV.
-            ${skippedCount > 0 ? `• ${skippedCount} row(d(s) ditolak karena duplikat atau data tidak valid.` : '• Tidak ada data yang ditolak.'}
-            • ${errors.length > 0 ? `• ${errors.length} row(d(s) gagal karena error: ${errors.join(', ')}.` : '• Tidak ada error.'}
-          </p>
-          <div style="margin-top:16px;display:flex;justify-content:flex-end;">
-            <button class="btn btn-primary" id="confirm-add" style="min-height:40px;">✓ Konfirm Add</button>
-            <button class="btn btn-secondary" id="cancel-add" style="min-height:40px;">✕ Batal</button>
+      const s = await studentRepository.create({ nis, nisn, name, gender, classId });
+      log(`✓ Siswa dibuat: ${s.name} (${s.nis})`);
+      root.querySelector<HTMLInputElement>('#f-nis')!.value = '';
+      root.querySelector<HTMLInputElement>('#f-nisn')!.value = '';
+      root.querySelector<HTMLInputElement>('#f-name')!.value = '';
+      await refreshStudents();
+    } catch (err: unknown) {
+      log(`✗ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  const showImportSummaryModal = (summary: { ok: { line: number; nis: string; name: string; gender: string; className: string }[]; bad: { line: number; nis: string; name: string; reason: string }[] }) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);backdrop-filter:blur(4px);padding:16px;';
+    const okCount = summary.ok.length;
+    const badCount = summary.bad.length;
+    const okList = summary.ok.slice(0, 50).map((r) => `• Baris ${r.line}: ${r.nis} | ${r.name} | ${r.gender} | ${r.className}`).join('<br>');
+    const badList = summary.bad.slice(0, 50).map((r) => `• Baris ${r.line}: ${r.nis} | ${r.name} → ${r.reason}`).join('<br>');
+    overlay.innerHTML = `
+      <div class="glass" style="max-width:560px;width:100%;max-height:85vh;padding:24px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;gap:12px;">
+        <h3 style="margin:0;color:var(--color-danger);">Ringkasan Import CSV</h3>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div class="glass" style="flex:1;min-width:120px;padding:12px;text-align:center;">
+            <div style="font-size:12px;color:var(--color-text-muted);">Bisa diimport</div>
+            <div style="font-size:22px;font-weight:800;color:var(--color-success);">${okCount}</div>
+          </div>
+          <div class="glass" style="flex:1;min-width:120px;padding:12px;text-align:center;">
+            <div style="font-size:12px;color:var(--color-text-muted);">Tidak bisa diimport</div>
+            <div style="font-size:22px;font-weight:800;color:var(--color-danger);">${badCount}</div>
           </div>
         </div>
-      `;
-      document.body.appendChild(overlay);
-      
-      // Wait for user interaction
-      const confirmBtn = overlay.querySelector<HTMLButtonElement>('#confirm-add');
-      const cancelBtn = overlay.querySelector<HTMLButtonElement>('#cancel-add');
-      
-      if (!confirmBtn || !cancelBtn) {
-        overlay.remove();
-        return;
-      }
-      
-      // Handle confirm
+        <div style="overflow:auto;max-height:40vh;background:rgba(255,255,255,0.55);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:12px;font-size:13px;">
+          ${okCount > 0 ? `<div style="margin-bottom:8px;font-weight:700;color:var(--color-success);">Data valid:</div><div style="margin-bottom:12px;">${okList || '—'}</div>` : ''}
+          ${badCount > 0 ? `<div style="font-weight:700;color:var(--color-danger);">Data ditolak:</div><div>${badList || '—'}</div>` : ''}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-ghost" id="import-cancel" style="min-height:40px;">Batal</button>
+          <button class="btn btn-primary" id="import-confirm" style="min-height:40px;">Konfirmasi Import</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const confirmBtn = overlay.querySelector<HTMLButtonElement>('#import-confirm');
+    const cancelBtn = overlay.querySelector<HTMLButtonElement>('#import-cancel');
+    if (!confirmBtn || !cancelBtn) {
+      overlay.remove();
+      return null;
+    }
+    return new Promise<boolean>((resolve) => {
       confirmBtn.addEventListener('click', async () => {
         overlay.remove();
-        await addBulkStudents(successCount, skippedCount, errors);
+        resolve(true);
       });
-      
-      // Handle cancel
       cancelBtn.addEventListener('click', () => {
         overlay.remove();
+        resolve(false);
       });
-    } catch (err: unknown) {
-      log(`✗ Error saat upload CSV: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-
-  async function addBulkStudents(successCount: number, skippedCount: number, errors: string[]) {
-    const total = successCount + skippedCount;
-    const parts: string[] = [];
-    parts.push(`✓ ${successCount} row(d(s) berhasil ditambahkan dari file CSV.`);
-    if (skippedCount > 0) {
-      parts.push(`⚠ ${skippedCount} row(d(s) ditolak karena duplikat atau data tidak valid.`);
-    }
-    if (errors.length > 0) {
-      parts.push(`✕ ${errors.length} row(d(s) gagal karena error: ${errors.join(', ')}.`);
-    }
-    showImportResult(parts.join(' · '), total > 0);
-  }
-
-  // Download template (auto-populated with class data)
-  root.querySelector<HTMLButtonElement>('#btn-template')!.addEventListener('click', () => {
-    if (allClasses.length === 0) {
-      showImportResult('⚠ Belum ada kelas. Buat kelas dulu di menu Kelas.', false);
-      return;
-    }
-    const lines = ['NIS,NISN,Nama,L/P,Kelas'];
-    for (const c of allClasses) {
-      for (let i = 1; i <= 3; i++) {
-        const sampleNis = `${c.grade.replace(/\D/g, '')}${String(i).padStart(2, '0')}000${i}`;
-        const sampleName = `[Siswa ${i} - ${c.name}]`;
-        lines.push(`${sampleNis},,${sampleName},L,${c.name}`);
-      }
-    }
-    const csv = lines.join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `template-siswa-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showImportResult(`✓ Template didownload dengan ${allClasses.length} kelas (${lines.length - 1} baris contoh)`, true);
-  });
-
-  // Import CSV/Excel
-  root.querySelector<HTMLInputElement>('#import-file')!.addEventListener('change', async (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      await processImport(text);
-    } catch (err: unknown) {
-      showImportResult(`✗ Error baca file: ${err instanceof Error ? err.message : String(err)}`, false);
-    }
-  });
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.remove();
+          resolve(false);
+        }
+      });
+    });
+  };
 
   const processImport = async (text: string) => {
     const lines = text.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim().length > 0);
@@ -507,9 +450,8 @@ export async function renderStudents(root: HTMLElement): Promise<void> {
     const existingNisn = new Set(allStudents.map((s) => s.nisn).filter(Boolean));
     const classByName = new Map(allClasses.map((c) => [c.name.toLowerCase(), c]));
 
-    let success = 0;
-    const errors: string[] = [];
-    const skipped: string[] = [];
+    const okRows: { line: number; nis: string; nisn: string; name: string; gender: string; className: string; classId: string }[] = [];
+    const badRows: { line: number; nis: string; name: string; reason: string }[] = [];
 
     for (let i = 1; i < lines.length; i++) {
       const row = parseRow(lines[i]);
@@ -522,42 +464,94 @@ export async function renderStudents(root: HTMLElement): Promise<void> {
       const cls = classByName.get(className.toLowerCase());
 
       if (!nis || !name || !gender) {
-        errors.push(`Baris ${i + 1}: data tidak lengkap / gender invalid`);
+        badRows.push({ line: i + 1, nis, name: name || '(kosong)', reason: 'Data tidak lengkap / gender invalid' });
         continue;
       }
       if (existingNis.has(nis)) {
-        skipped.push(`Baris ${i + 1}: NIS "${nis}" sudah ada`);
+        badRows.push({ line: i + 1, nis, name, reason: `NIS "${nis}" sudah ada` });
         continue;
       }
       if (nisn && existingNisn.has(nisn)) {
-        skipped.push(`Baris ${i + 1}: NISN "${nisn}" sudah ada`);
+        badRows.push({ line: i + 1, nis, name, reason: `NISN "${nisn}" sudah ada` });
         continue;
       }
       if (!cls) {
-        errors.push(`Baris ${i + 1}: kelas "${className}" tidak terdaftar`);
+        badRows.push({ line: i + 1, nis, name, reason: `Kelas "${className}" tidak terdaftar` });
         continue;
       }
+      okRows.push({ line: i + 1, nis, nisn, name, gender, className: cls.name, classId: cls.id });
+    }
+
+    const summary = {
+      ok: okRows.map((r) => ({ line: r.line, nis: r.nis, name: r.name, gender: r.gender, className: r.className })),
+      bad: badRows.map((r) => ({ line: r.line, nis: r.nis, name: r.name, reason: r.reason }))
+    };
+
+    const confirmed = await showImportSummaryModal(summary);
+    if (!confirmed) {
+      showImportResult('Import dibatalkan oleh pengguna.', false);
+      return;
+    }
+
+    let success = 0;
+    const errors: string[] = [];
+    for (const row of okRows) {
       try {
-        await studentRepository.create({ nis, nisn: nisn || undefined, name, gender, classId: cls.id });
-        existingNis.add(nis);
-        if (nisn) existingNisn.add(nisn);
+        await studentRepository.create({ nis: row.nis, nisn: row.nisn || undefined, name: row.name, gender: row.gender as Gender, classId: row.classId });
         success++;
       } catch (err: unknown) {
-        errors.push(`Baris ${i + 1}: ${err instanceof Error ? err.message : String(err)}`);
+        errors.push(`Baris ${row.line}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
     const parts: string[] = [];
     parts.push(`✓ ${success} siswa diimport`);
-    if (skipped.length > 0) parts.push(`⚠ ${skipped.length} dilewati (duplikat)`);
+    if (badRows.length > 0) parts.push(`⚠ ${badRows.length} ditolak (duplikat/data tidak valid)`);
     if (errors.length > 0) parts.push(`✗ ${errors.length} gagal`);
     showImportResult(parts.join(' · '), success > 0);
 
     if (errors.length > 0) console.warn('Import errors:', errors);
-    if (skipped.length > 0) console.warn('Import skipped:', skipped);
+    if (badRows.length > 0) console.warn('Import skipped:', badRows);
 
     await refreshStudents();
   };
+
+  // Download template (auto-populated with class data)
+  root.querySelector<HTMLButtonElement>('#btn-template')!.addEventListener('click', () => {
+    if (allClasses.length === 0) {
+      showImportResult('⚠ Belum ada kelas. Buat kelas dulu di menu Kelas.', false);
+      return;
+    }
+    const lines = ['NIS,NISN,Nama,L/P,Kelas'];
+    for (const c of allClasses) {
+      for (let i = 1; i <= 3; i++) {
+        const sampleNis = `${c.grade.replace(/\D/g, '')}${String(i).padStart(2, '0')}000${i}`;
+        const sampleName = `[Siswa ${i} - ${c.name}]`;
+        lines.push(`${sampleNis},,${sampleName},L,${c.name}`);
+      }
+    }
+    const csv = lines.join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `template-siswa-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showImportResult(`✓ Template didownload dengan ${allClasses.length} kelas (${lines.length - 1} baris contoh)`, true);
+  });
+
+  // Import CSV/Excel
+  root.querySelector<HTMLInputElement>('#import-file')!.addEventListener('change', async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      await processImport(text);
+    } catch (err: unknown) {
+      showImportResult(`✗ Error baca file: ${err instanceof Error ? err.message : String(err)}`, false);
+    }
+  });
 
   await refreshClasses();
   await refreshStudents();
