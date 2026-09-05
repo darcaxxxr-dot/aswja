@@ -19,35 +19,27 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
         </p>
       </header>
 
-      <section class="card glass">
-        <div class="row" style="justify-content:space-between;flex-wrap:wrap;">
+      <section class="card glass" id="enroll-workflow" style="display:none;">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
           <div class="row">
             <button class="btn btn-primary" id="btn-start">Mulai Kamera</button>
             <button class="btn btn-ghost" id="btn-stop" disabled>Stop</button>
             <button class="btn btn-ghost" id="btn-switch" disabled>Switch</button>
             <button class="btn btn-primary" id="btn-load" disabled>Load AI Models</button>
           </div>
-          <div class="row">
-            <span class="muted" style="font-size:13px;">Filter:</span>
-            <select id="filter-class" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;">
-              <option value="">Semua kelas</option>
-            </select>
-            <select id="filter-status" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;">
-              <option value="all">Semua</option>
-              <option value="without">Belum ada profile</option>
-              <option value="with">Sudah ada profile</option>
-            </select>
-          </div>
+          <span id="enroll-student-name" class="muted" style="font-size:13px;"></span>
         </div>
 
         <div class="camera-stage" id="stage" style="aspect-ratio: 4/3;margin-top:12px;">
           <div class="camera-placeholder" id="camera-placeholder" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(15,23,42,0.85);color:#cbd5e1;text-align:center;padding:24px;transition:opacity 200ms ease;">
             <div style="font-size:32px;">📸</div>
-            <div>Aktifkan kamera untuk mulai enrollment.</div>
+            <div>Klik <strong>Mulai Kamera</strong> untuk memulai enrollment.</div>
           </div>
           <video id="camera-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:none;"></video>
           <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
         </div>
+
+        <div id="enroll-step" style="margin-top:12px;padding:12px;background:rgba(255,255,255,0.6);border:1px solid var(--color-border);border-radius:var(--radius-md);display:none;"></div>
       </section>
 
       <section class="card glass">
@@ -73,11 +65,6 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
         </div>
       </section>
 
-      <section class="card glass" id="enroll-card" style="display:none;">
-        <h3 style="margin:0 0 12px;">Proses Enrollment</h3>
-        <div id="enroll-panel"></div>
-      </section>
-
       <section class="card glass">
         <h3 style="margin:0 0 8px;">Log</h3>
         <pre id="log" style="background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;max-height:160px;overflow:auto;margin:0;font-size:12px;"></pre>
@@ -90,6 +77,9 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   const overlay = root.querySelector<HTMLCanvasElement>('#overlay')!;
   const overlayCtx = overlay.getContext('2d')!;
 
+  const enrollWorkflow = root.querySelector<HTMLDivElement>('#enroll-workflow')!;
+  const enrollStudentName = root.querySelector<HTMLSpanElement>('#enroll-student-name')!;
+  const enrollStep = root.querySelector<HTMLDivElement>('#enroll-step')!;
   const btnStart = root.querySelector<HTMLButtonElement>('#btn-start')!;
   const btnStop = root.querySelector<HTMLButtonElement>('#btn-stop')!;
   const btnSwitch = root.querySelector<HTMLButtonElement>('#btn-switch')!;
@@ -99,8 +89,6 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   const studentTotal = root.querySelector<HTMLSpanElement>('#student-total')!;
   const pageInfo = root.querySelector<HTMLSpanElement>('#page-info')!;
   const tbody = root.querySelector<HTMLTableSectionElement>('#student-tbody')!;
-  const enrollCard = root.querySelector<HTMLDivElement>('#enroll-card')!;
-  const enrollPanel = root.querySelector<HTMLDivElement>('#enroll-panel')!;
   const logEl = root.querySelector<HTMLPreElement>('#log')!;
 
   const log = (msg: string) => {
@@ -196,54 +184,81 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   };
 
   const startEnrollment = async (student: Student) => {
-    if (!cameraService.isActive()) {
-      log('Aktifkan kamera dulu.');
-      return;
-    }
-    if (!faceModelLoader.isLoaded()) {
-      log('Load AI Models dulu.');
-      return;
-    }
     isEnrolling = true;
     await renderTable();
-    enrollCard.style.display = 'block';
-    enrollPanel.innerHTML = `
-      <div id="enroll-step" style="padding:12px;background:rgba(255,255,255,0.6);border:1px solid var(--color-border);border-radius:var(--radius-md);">
-        <p><strong>Siswa:</strong> ${student.name} (${student.nis})</p>
-        <p class="muted">Sistem akan memverifikasi liveness, lalu menangkap 3 pose. Ikuti instruksi di layar.</p>
-        <div id="enroll-status" class="stack" style="margin-top:12px;"></div>
-      </div>
-    `;
-    const statusEl = enrollPanel.querySelector<HTMLDivElement>('#enroll-status')!;
-    const stepEl = enrollPanel.querySelector<HTMLDivElement>('#enroll-step')!;
+    enrollWorkflow.style.display = 'block';
+    enrollStudentName.textContent = `Siswa: ${student.name} (${student.nis})`;
+    enrollStep.style.display = 'none';
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    placeholder.style.display = 'flex';
+    placeholder.style.opacity = '1';
+    video.style.display = 'none';
+    setCamButtons(false);
+    btnLoad.disabled = !(await faceModelLoader.isLoaded());
 
-    const setStep = (title: string, detail: string) => {
-      stepEl.innerHTML = `<p><strong>Siswa:</strong> ${student.name} (${student.nis})</p><p class="muted">${title}</p><p><strong>${detail}</strong></p><div id="enroll-status" class="stack" style="margin-top:12px;"></div>`;
-      const newStatus = stepEl.querySelector<HTMLDivElement>('#enroll-status')!;
-      return newStatus;
+    log(`Memulai enrollment untuk ${student.name}...`);
+    try {
+      await ensureCameraAndModel();
+      await runEnrollmentFlow(student);
+    } catch {
+      // error already logged in ensureCameraAndModel
+      isEnrolling = false;
+      await renderTable();
+    }
+  };
+
+  const ensureCameraAndModel = async () => {
+    if (!faceModelLoader.isLoaded()) {
+      log('Memuat model...');
+      btnLoad.disabled = true;
+      await faceModelLoader.load();
+      log('Model siap.');
+      btnLoad.disabled = false;
+    }
+    if (!cameraService.isActive()) {
+      log('Memulai kamera...');
+      setCamButtons(true);
+      btnStart.disabled = true;
+      try {
+        await cameraService.start(video);
+        log('Kamera aktif.');
+        placeholder.style.opacity = '0';
+        setTimeout(() => { placeholder.style.display = 'none'; }, 200);
+        video.style.display = 'block';
+      } catch (err: unknown) {
+        const msg = err instanceof CameraError ? err.message : (err as Error).message;
+        log(`ERROR kamera: ${msg}`);
+        throw err;
+      }
+    }
+  };
+
+  const runEnrollmentFlow = async (student: Student) => {
+    enrollStep.style.display = 'block';
+    enrollStep.innerHTML = `
+      <p class="muted">Sistem akan memverifikasi liveness, lalu menangkap 3 pose. Ikuti instruksi di layar.</p>
+      <div id="enroll-status" class="stack" style="margin-top:12px;"></div>
+    `;
+    const statusEl = enrollStep.querySelector<HTMLDivElement>('#enroll-status')!;
+
+    const setStatus = (title: string, detail: string) => {
+      statusEl.innerHTML = `<p><strong>${title}</strong></p><p>${detail}</p>`;
     };
 
     try {
       const result = await enrollmentService.enrollStudentWithFlow(student, video, {
         onStep: (step, msg) => {
           const title = step === 'liveness' ? 'Verifikasi Liveness' : step === 'front' ? 'Pose 1: Hadap Depan' : step === 'right' ? 'Pose 2: Hadap Kanan' : 'Pose 3: Hadap Kiri';
-          const el = setStep(title, msg);
-          statusEl.replaceWith(el);
+          setStatus(title, msg);
           log(msg);
         }
       });
-      enrollPanel.insertAdjacentHTML(
-        'beforeend',
-        `<div style="margin-top:8px;padding:12px;background:rgba(22,163,74,0.12);border:1px solid rgba(22,163,74,0.3);border-radius:var(--radius-md);color:var(--color-success);"><strong>✓ Enrollment selesai.</strong> Avg quality: ${result.avgQuality.toFixed(2)}, ${result.profiles.length} profile tersimpan.</div>`
-      );
+      statusEl.insertAdjacentHTML('beforeend', `<div style="margin-top:8px;color:var(--color-success);"><strong>✓ Enrollment selesai.</strong> Avg quality: ${result.avgQuality.toFixed(2)}, ${result.profiles.length} profile tersimpan.</div>`);
       log(`✓ Enrollment ${student.name} selesai. Quality=${result.avgQuality.toFixed(2)}`);
       await refreshStudents();
     } catch (err: unknown) {
       const msg = err instanceof FaceError || err instanceof Error ? err.message : 'Unknown error';
-      enrollPanel.insertAdjacentHTML(
-        'beforeend',
-        `<div style="margin-top:8px;padding:12px;background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.3);border-radius:var(--radius-md);color:var(--color-danger);"><strong>✗ Gagal:</strong> ${msg}</div>`
-      );
+      statusEl.insertAdjacentHTML('beforeend', `<div style="margin-top:8px;color:var(--color-danger);"><strong>✗ Gagal:</strong> ${msg}</div>`);
       log(`ERROR enroll: ${msg}`);
     } finally {
       isEnrolling = false;
@@ -254,15 +269,9 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
 
   btnStart.addEventListener('click', async () => {
     try {
-      await cameraService.start(video);
-      log('Kamera aktif.');
-      setCamButtons(true);
-      placeholder.style.opacity = '0';
-      setTimeout(() => { placeholder.style.display = 'none'; }, 200);
-      video.style.display = 'block';
-    } catch (err: unknown) {
-      const msg = err instanceof CameraError ? err.message : (err as Error).message;
-      log(`ERROR kamera: ${msg}`);
+      await ensureCameraAndModel();
+    } catch {
+      // error already logged
     }
   });
 
@@ -284,6 +293,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     placeholder.style.display = 'flex';
     placeholder.style.opacity = '1';
     video.style.display = 'none';
+    enrollStep.style.display = 'none';
   });
 
   btnLoad.addEventListener('click', async () => {
@@ -292,6 +302,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
       log('Memuat model...');
       await faceModelLoader.load();
       log('Model siap.');
+      btnLoad.disabled = false;
     } catch (err: unknown) {
       const msg = err instanceof FaceError ? err.message : (err as Error).message;
       log(`ERROR load model: ${msg}`);
@@ -305,8 +316,4 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   await refreshClasses();
   await refreshStudents();
   log('Halaman enrollment siap.');
-
-  window.addEventListener('beforeunload', () => {
-    void cameraService.stop();
-  });
 }
