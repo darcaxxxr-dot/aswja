@@ -3,6 +3,7 @@ import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
 
 export async function renderLogin(root: HTMLElement): Promise<void> {
+  // Animated gradient background (mounted once)
   let bgEl = document.querySelector('.aswja-bg') as HTMLElement | null;
   if (!bgEl) {
     bgEl = document.createElement('div');
@@ -13,28 +14,28 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
   bgEl.style.display = 'block';
 
   root.innerHTML = `
-    <div class="stack" style="max-width:460px;margin:48px auto;padding:0 16px 32px;position:relative;z-index:1;">
-      <div style="text-align:center;margin-bottom:20px;">
+    <div class="aswja-page" style="max-width:480px;">
+      <div class="center" style="margin-bottom:24px;">
         <h1 class="aswja-brand-title">${BRAND.name}</h1>
-        <p class="aswja-brand-subtitle">${BRAND.fullName.replace(BRAND.name + ' - ', '')}</p>
+        <p class="aswja-brand-subtitle">${BRAND.tagline}</p>
       </div>
 
-      <div class="glass stack" style="gap:14px;">
+      <div class="glass" style="width:100%;max-width:440px;">
         <div class="glass-icon" id="brand-icon">
           <img src="${BRAND.icon}" alt="${BRAND.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
           <div class="glass-icon-fallback" style="display:none;">${BRAND.name.charAt(0)}</div>
         </div>
 
-        <p class="aswja-tagline" style="text-align:center;margin:0 0 4px;">
-          Silahkan masuk untuk memulai.
-        </p>
+        <div class="center" style="margin-bottom:20px;">
+          <span class="aswja-tagline">Silahkan masuk untuk memulai.</span>
+        </div>
 
         ${authService.isEnabled()
           ? ''
-          : `<div class="glass-banner">⚠ Supabase tidak dikonfigurasi. Set <code>.env</code> atau Settings → Supabase untuk mengaktifkan login.</div>`
+          : `<div class="glass-banner" style="margin-bottom:14px;">⚠ Supabase tidak dikonfigurasi. Set <code>.env</code> atau Settings → Supabase untuk mengaktifkan login.</div>`
         }
 
-        <div id="idle-banner" class="glass-banner glass-banner-error" style="display:none;">
+        <div id="idle-banner" class="glass-banner glass-banner-error" style="display:none;margin-bottom:14px;">
           ⏰ Session expired. Silakan login ulang.
         </div>
 
@@ -46,10 +47,10 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
           </button>
         </form>
 
-        <div id="msg" class="glass-message"></div>
+        <div id="msg" class="glass-message" style="margin-top:12px;"></div>
       </div>
 
-      <p class="aswja-credit">
+      <p class="aswja-credit" style="margin-top:24px;">
         Crafted with care by <strong>${BRAND.credit.team}</strong>
       </p>
     </div>

@@ -440,35 +440,56 @@ h1, h2, h3, h4, h5, h6 {
 .aswja-brand-title {
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 64px;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  background: linear-gradient(135deg, #fff 0%, #d1fae5 100%);
+  font-size: 72px;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  background: linear-gradient(180deg, #ffffff 0%, #d1fae5 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.15);
   margin: 0;
+  display: inline-block;
+  padding: 4px 16px;
+  border-radius: 16px;
+  background-color: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
 .aswja-brand-subtitle {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: 800;
+  font-size: 15px;
   line-height: 1.4;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.95);
-  margin: 8px 0 0;
+  letter-spacing: 0.02em;
+  color: rgba(15, 23, 42, 0.95);
+  margin: 12px 0 0;
+  display: inline-block;
+  padding: 8px 18px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.1);
 }
 
 .aswja-tagline {
   font-family: var(--font-display);
   font-weight: 500;
   font-size: 14px;
-  color: rgba(15, 23, 42, 0.7);
+  color: rgba(15, 23, 42, 0.8);
   margin: 0 0 24px;
   line-height: 1.5;
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .aswja-credit {
@@ -477,14 +498,21 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(15, 23, 42, 0.55);
+  color: rgba(255, 255, 255, 0.95);
   text-align: center;
-  margin: 0;
+  margin: 24px 0 0;
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .aswja-credit strong {
   font-weight: 800;
-  color: var(--aswja-primary-dark);
+  color: #ffffff;
   letter-spacing: 0.12em;
 }
 
@@ -544,9 +572,36 @@ h1, h2, h3, h4, h5, h6 {
 
 @media (max-width: 480px) {
   .aswja-brand-title {
-    font-size: 48px;
+    font-size: 56px;
   }
   .aswja-brand-subtitle {
-    font-size: 11px;
+    font-size: 13px;
   }
+}
+
+/* ============================================
+   ASWJA FULL-PAGE WRAPPER — every text on glass
+   ============================================ */
+
+.aswja-page {
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px 40px;
+}
+
+.aswja-page .center {
+  text-align: center;
+}
+
+.aswja-page .inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
 }

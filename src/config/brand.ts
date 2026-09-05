@@ -14,6 +14,7 @@ export interface BrandConfig {
   name: string;
   shortName: string;
   fullName: string;
+  /** Tegas: displayed below the brand name as a strong subtitle */
   tagline: string;
   description: string;
   icon: string;
@@ -30,7 +31,7 @@ export const BRAND: BrandConfig = {
   name: 'ASWJA',
   shortName: 'ASWJA',
   fullName: 'ASWJA - Absensi Sholat Wajib Berjamaah',
-  tagline: 'MAN Insan Cendekia Kota Palangkaraya',
+  tagline: 'Absensi Sholat Wajib Berjamaah',
   description: 'ASWJA - Absensi Sholat Wajib Berjamaah MAN IC Kota Palangkaraya',
   icon: '/icons/icon.svg',
   favicon: '/icons/favicon-32.png',

@@ -15,20 +15,25 @@ export async function renderSetup(root: HTMLElement): Promise<void> {
   bgEl.style.display = 'block';
 
   root.innerHTML = `
-    <div class="stack" style="max-width:520px;margin:48px auto;padding:0 16px 32px;position:relative;z-index:1;">
-      <div style="text-align:center;margin-bottom:20px;">
-        <h1 class="aswja-brand-title" style="font-size:42px;">${BRAND.name}</h1>
+    <div class="aswja-page" style="max-width:520px;">
+      <div class="center" style="margin-bottom:24px;">
+        <h1 class="aswja-brand-title" style="font-size:48px;">${BRAND.name}</h1>
         <p class="aswja-brand-subtitle">Setup Superuser (Backdoor)</p>
       </div>
 
-      <div class="glass stack" style="gap:14px;">
-        <div class="glass-banner">
-          ⚙️ Halaman setup tersembunyi. Jangan bagikan URL ini. Hapus setelah akun superuser dibuat.
+      <div class="glass" style="width:100%;max-width:480px;">
+        <div class="glass-icon" id="brand-icon">
+          <img src="${BRAND.icon}" alt="${BRAND.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+          <div class="glass-icon-fallback" style="display:none;">${BRAND.name.charAt(0)}</div>
         </div>
 
-        <p style="margin:0;font-size:14px;color:var(--color-text-muted);text-align:center;">
-          Buat akun SUPERUSER pertama untuk mengaktifkan sistem login.
-        </p>
+        <div class="center" style="margin-bottom:16px;">
+          <span class="aswja-tagline">Buat akun SUPERUSER pertama untuk mengaktifkan sistem login.</span>
+        </div>
+
+        <div class="glass-banner" style="margin-bottom:14px;">
+          ⚙️ Halaman setup tersembunyi. Jangan bagikan URL ini. Hapus setelah akun superuser dibuat.
+        </div>
 
         <form id="form" class="stack" style="gap:10px;">
           <input id="f-name" type="text" placeholder="Nama tampilan (mis. Admin Madrasah)" required class="glass-input" style="padding:12px;border-radius:10px;" />
@@ -44,10 +49,10 @@ export async function renderSetup(root: HTMLElement): Promise<void> {
           </button>
         </form>
 
-        <div id="msg" class="glass-message"></div>
+        <div id="msg" class="glass-message" style="margin-top:12px;"></div>
       </div>
 
-      <p class="aswja-credit">
+      <p class="aswja-credit" style="margin-top:24px;">
         Crafted with care by <strong>${BRAND.credit.team}</strong>
       </p>
     </div>
