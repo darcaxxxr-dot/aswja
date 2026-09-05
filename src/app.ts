@@ -33,9 +33,14 @@ export function bootstrap(rootElement: HTMLElement): void {
   initIdleIndicator();
   initSyncIndicator();
 
-  void syncService.startAutoSync(30000).catch((err: unknown) => {
-    console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
-  });
+  let autoSyncStarted = false;
+  const startAutoSyncOnce = () => {
+    if (autoSyncStarted) return;
+    autoSyncStarted = true;
+    void syncService.startAutoSync(30000).catch((err: unknown) => {
+      console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  };
 
   authService.onAuthStateChange((user) => {
     const path = window.location.pathname;
@@ -45,6 +50,9 @@ export function bootstrap(rootElement: HTMLElement): void {
     } else if (user && (path === '/login' || path === '/')) {
       window.history.replaceState({}, '', '/dashboard');
       router.navigate('/dashboard');
+    }
+    if (user) {
+      startAutoSyncOnce();
     }
   });
 

@@ -2,7 +2,8 @@ export const APP_CONFIG = {
   appName: 'SmartFace Attendance',
   version: '0.1.0',
   deviceIdKey: 'sf_device_id',
-  schoolIdKey: 'sf_school_id'
+  schoolIdKey: 'sf_school_id',
+  schoolIdOverrideKey: 'sf_school_id_override'
 } as const;
 
 export const CAMERA_CONFIG = {

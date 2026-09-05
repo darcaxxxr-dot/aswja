@@ -2,6 +2,7 @@ import { db } from '@services/database/dexieSchema';
 import { settingRepository } from '@repositories/index';
 import { getOrCreateSchoolId } from '@utils/device';
 import { getSupabaseClient, SupabaseError, cloudSelect, cloudUpsert } from './supabaseClient';
+import { authService } from '@services/auth/index';
 import type { ClassRoom, Student, FaceProfile, AttendanceSession, AttendanceRecord, AcademicYear, School } from '@models/types';
 
 export interface SyncReport {
@@ -275,16 +276,42 @@ export class SyncService {
       };
     }
 
+    if (!getSupabaseClient()) {
+      return {
+        ok: false,
+        pushed,
+        pulled,
+        errors: ['supabase not configured'],
+        durationMs: 0,
+        lastSyncAt: 0
+      };
+    }
+
+    if (!authService.isAuthenticated()) {
+      return {
+        ok: false,
+        pushed,
+        pulled,
+        errors: ['not authenticated — RLS will block. Login first.'],
+        durationMs: 0,
+        lastSyncAt: 0
+      };
+    }
+
     try {
       pushed = await this.pushAll();
     } catch (err: unknown) {
-      errors.push(`push: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[sync] push failed: ${msg}`);
+      errors.push(`push: ${msg}`);
     }
 
     try {
       pulled = await this.pullAll();
     } catch (err: unknown) {
-      errors.push(`pull: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[sync] pull failed: ${msg}`);
+      errors.push(`pull: ${msg}`);
     }
 
     const now = Date.now();

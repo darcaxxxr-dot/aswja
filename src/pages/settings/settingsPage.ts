@@ -3,7 +3,7 @@ import { settingsService, type AppSettings } from '@services/settings/index';
 import { syncService, setSupabaseRuntimeConfig, clearSupabaseRuntimeConfig } from '@services/sync/index';
 import { authService, type AppUser } from '@services/auth/index';
 import { databaseService } from '@services/database/index';
-import { formatTime } from '@utils/device';
+import { formatTime, setSchoolIdOverride, clearSchoolIdOverride, isValidUuid } from '@utils/device';
 
 const SECTIONS: Array<{ key: keyof AppSettings; label: string; desc: string }> = [
   { key: 'schoolName', label: 'Nama Sekolah', desc: 'Ditampilkan di header & laporan.' },
@@ -58,7 +58,13 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
             <input id="school-name" type="text" value="${escapeHtml(s.schoolName)}" style="flex:1;min-width:240px;padding:10px;border:1px solid var(--color-border);border-radius:8px;" />
             <button class="btn btn-primary" id="btn-save-school">Simpan</button>
           </div>
-          <div class="muted" style="font-size:12px;">School ID: <code>${s.schoolId}</code> · Device ID: <code>${s.deviceId}</code></div>
+          <div class="muted" style="font-size:12px;">School ID: <code id="school-id">${escapeHtml(s.schoolId)}</code> <button class="btn btn-ghost" id="btn-copy-school" style="padding:2px 8px;min-height:24px;font-size:11px;margin-left:4px;">Copy</button></div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <input id="override-school" type="text" placeholder="Override School ID (UUID, untuk sync ke sekolah lain)" value="${escapeHtml(s.schoolId)}" style="flex:1;min-width:280px;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-family:monospace;font-size:12px;" />
+            <button class="btn btn-ghost" id="btn-override-school">Set Override</button>
+            <button class="btn btn-ghost" id="btn-clear-override">Reset ke auto</button>
+          </div>
+          <div class="muted" style="font-size:11px;">Device ID: <code>${escapeHtml(s.deviceId)}</code></div>
         </section>
 
         <section class="card stack" id="section-attendance">
@@ -174,6 +180,41 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
       if (!v) return;
       await settingsService.save({ schoolName: v });
       log('Nama sekolah disimpan.');
+      await refresh();
+    });
+
+    root.querySelector<HTMLButtonElement>('#btn-copy-school')?.addEventListener('click', async () => {
+      const id = root.querySelector<HTMLElement>('#school-id')!.textContent ?? '';
+      try {
+        await navigator.clipboard.writeText(id);
+        log(`School ID disalin: ${id}`);
+      } catch (err: unknown) {
+        log(`Copy gagal: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+    root.querySelector<HTMLButtonElement>('#btn-override-school')?.addEventListener('click', async () => {
+      const v = root.querySelector<HTMLInputElement>('#override-school')!.value.trim();
+      if (!v) {
+        log('UUID kosong.');
+        return;
+      }
+      if (!isValidUuid(v)) {
+        log('Format UUID tidak valid. Contoh: 00000000-0000-0000-0000-000000000001');
+        return;
+      }
+      try {
+        setSchoolIdOverride(v);
+        log(`School ID override diset: ${v}. Refresh halaman untuk efek penuh.`);
+        await refresh();
+      } catch (err: unknown) {
+        log(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+    root.querySelector<HTMLButtonElement>('#btn-clear-override')?.addEventListener('click', async () => {
+      clearSchoolIdOverride();
+      log('Override dihapus. Pakai school ID auto-generated.');
       await refresh();
     });
 

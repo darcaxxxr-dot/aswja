@@ -51,33 +51,48 @@ git remote -v
 2. Disable "Confirm email".
 3. Save.
 
-#### 3.3 Create Admin User
+#### 3.3 Create Superuser
 1. Supabase Dashboard → Authentication → Users → **Add User**.
-2. Email: `admin@sekolah.sch.id` (atau sesuai).
-3. Password: (generate strong).
+2. Email: `superuser@aswja.local`
+3. Password: (generate strong, mis. `Aswaja@2026!`).
 4. **Auto Confirm User**: ON.
-5. Setelah user dibuat, klik user → **Edit** → isi `raw_user_meta_data`:
-   ```json
-   {"display_name": "Admin Sekolah", "role": "ADMIN", "school_id": "00000000-0000-0000-0000-000000000001"}
+5. Klik user yang baru dibuat → copy **User UID**.
+6. Promote ke SUPERUSER via SQL Editor:
+   ```sql
+   update public.profiles
+   set role = 'SUPERUSER',
+       sub_role = 'KEPALA_MADRASAH',
+       display_name = 'Superuser UAT',
+       school_id = '00000000-0000-0000-0000-000000000001',
+       updated_at = now()
+   where id = '<USER_UID>';
    ```
-6. Save.
 
-Atau gunakan SQL:
-```sql
-update auth.users
-set raw_user_meta_data = jsonb_build_object(
-  'display_name', 'Admin Sekolah',
-  'role', 'ADMIN',
-  'school_id', '00000000-0000-0000-0000-000000000001'
-)
-where email = 'admin@sekolah.sch.id';
-```
+#### 3.3a Setup School ID di Browser (PENTING!)
 
-#### 3.4 Update Profile school_id
+School ID yang dipakai IndexedDB di browser harus **sama** dengan `school_id` di Supabase profiles. Format HARUS **UUID** (PostgreSQL `uuid` type, bukan string `SCH-XXXX`).
+
+1. Buka https://aswja.vercel.app → `/login`
+2. Login sebagai superuser
+3. Buka **Settings** → Section "Nama Sekolah"
+4. **Copy School ID** (UUID) via tombol "Copy"
+5. Di Supabase SQL Editor, set profile.school_id = UUID dari Settings:
+   ```sql
+   update public.profiles set school_id = '<uuid-dari-settings>' where id = '<USER_UID>';
+   ```
+6. Atau jika ingin pakai UUID existing, set **Override School ID** di Settings browser.
+
+**Penting:** Tanpa School ID yang cocok (UUID), query `GET /schools?school_id=eq.<id>` akan return **400 Bad Request**. Auto-sync hanya berjalan setelah login, jadi error ini hanya muncul setelah user authenticated.
+
+Atau gunakan SQL untuk create school + link profile sekaligus (di Supabase SQL Editor):
 ```sql
+insert into public.schools (id, name)
+values ('<UUID_DARI_SETTINGS>', 'Madrasah Aliyah Aswaja')
+on conflict (id) do nothing;
+
 update public.profiles
-set school_id = '00000000-0000-0000-0000-000000000001'
-where id = (select id from auth.users where email = 'admin@sekolah.sch.id');
+set school_id = '<UUID_DARI_SETTINGS>'
+where id = '<USER_UID>';
 ```
 
 ### 4. Custom Domain (opsional)
