@@ -208,6 +208,13 @@ export function initDashboardAndShell(root: HTMLElement): void {
     await renderLogin(pageRoot);
   }, 'Login');
 
+  router.addRoute('/__setup__', async () => {
+    root.innerHTML = '<div id="page-root"></div>';
+    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const { renderSetup } = await import('@pages/login/index');
+    await renderSetup(pageRoot);
+  }, 'Setup Superuser (hidden)');
+
   router.addRoute(ROUTES.cameraTest, async () => {
     root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;

@@ -48,11 +48,11 @@ export default defineConfig({
         'models/face_recognition_model-shard2'
       ],
       manifest: {
-        name: 'SmartFace Attendance',
-        short_name: 'SmartFace',
-        description: 'Sistem Absensi Siswa Berbasis Face Recognition - Offline First',
-        theme_color: '#0ea5e9',
-        background_color: '#0f172a',
+        name: 'ASWJA - Absensi Sholat Wajib Berjamaah',
+        short_name: 'ASWJA',
+        description: 'Absensi Sholat Wajib Berjamaah MAN Insan Cendekia Kota Palangkaraya',
+        theme_color: '#0ea572',
+        background_color: '#064e3b',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',

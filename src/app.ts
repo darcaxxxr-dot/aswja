@@ -5,15 +5,20 @@ import { getOrCreateDeviceId, getOrCreateSchoolId } from '@utils/device';
 import { databaseService } from '@services/database/index';
 import { syncService } from '@services/sync/index';
 import { authService } from '@services/auth/index';
+import { BRAND } from '@config/brand';
 
 const PROTECTED_PATHS = ['/dashboard', '/students', '/enrollment', '/classes', '/attendance', '/reports', '/settings', '/supabase-test', '/face-test', '/db-test', '/camera-test'];
 
 function isProtectedPath(path: string): boolean {
-  if (path === '/login' || path === '/' || path === '') return false;
+  if (path === '/login' || path === '/' || path === '' || path === '/__setup__') return false;
   return PROTECTED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
 }
 
 export function bootstrap(rootElement: HTMLElement): void {
+  document.title = BRAND.fullName;
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute('content', BRAND.themeColor);
+
   const deviceId = getOrCreateDeviceId();
   const schoolId = getOrCreateSchoolId();
   console.info(`[bootstrap] device=${deviceId} school=${schoolId}`);
