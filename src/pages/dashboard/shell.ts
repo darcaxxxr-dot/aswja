@@ -2,7 +2,7 @@ import { ROUTES } from '@config/app';
 import { router } from '@router/index';
 import { installPromptService } from '@services/pwa/index';
 import { syncService } from '@services/sync/index';
-import { authService, type AppUser } from '@services/auth/index';
+import { authService, ROLE_LABELS, SUBROLE_LABELS, type AppUser } from '@services/auth/index';
 
 export function renderAppShell(activePath: string, user: AppUser | null = null): string {
   const items: Array<{ href: string; label: string }> = [
@@ -24,8 +24,9 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
 
   const offlineBadge = `<span id="offline-badge" style="display:none;background:#dc2626;color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">OFFLINE</span>`;
   const syncBadge = `<span id="sync-badge" title="Sync status" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;">Sync: —</span>`;
+  const idleBadge = `<span id="idle-badge" title="Sesi idle, auto-logout dalam 30 menit" style="background:rgba(255,255,255,0.06);color:#94a3b8;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">⏱ —</span>`;
   const userBadge = user
-    ? `<span id="user-badge" title="${user.email ?? ''} · ${user.role}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">${user.displayName} · ${user.role}</span>`
+    ? `<span id="user-badge" title="${user.email ?? ''} · ${ROLE_LABELS[user.role]}${user.subRole ? ' · ' + SUBROLE_LABELS[user.subRole] : ''}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;">${user.displayName} · ${ROLE_LABELS[user.role]}${user.subRole ? '/' + SUBROLE_LABELS[user.subRole] : ''}</span>`
     : `<a id="user-badge" href="/login" data-link style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;text-decoration:none;">Login</a>`;
   const installBtn = `<button id="btn-install" class="btn" style="display:none;background:#16a34a;color:#fff;padding:6px 10px;min-height:32px;font-size:13px;">Install App</button>`;
 
@@ -33,7 +34,7 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
     <header class="app-header">
       <h1>SmartFace Attendance</h1>
       <nav class="app-nav">${nav}</nav>
-      <div class="row" style="margin-left:auto;">${offlineBadge}${syncBadge}${userBadge}${installBtn}</div>
+      <div class="row" style="margin-left:auto;">${offlineBadge}${syncBadge}${idleBadge}${userBadge}${installBtn}</div>
     </header>
     <main class="app-main" id="page-root"></main>
   `;
@@ -69,6 +70,29 @@ export function initOfflineIndicator(): void {
   update();
   window.addEventListener('online', update);
   window.addEventListener('offline', update);
+}
+
+export function initIdleIndicator(): void {
+  const update = () => {
+    const badge = document.getElementById('idle-badge');
+    if (!badge) return;
+    if (!authService.isAuthenticated()) {
+      badge.style.display = 'none';
+      return;
+    }
+    const ms = authService.getIdleRemainingMs();
+    if (ms <= 0) {
+      badge.textContent = '⏱ 0:00';
+      return;
+    }
+    const min = Math.floor(ms / 60000);
+    const sec = Math.floor((ms % 60000) / 1000);
+    badge.textContent = `⏱ ${min}:${String(sec).padStart(2, '0')}`;
+  };
+  update();
+  setInterval(update, 1000);
+  authService.onAuthStateChange(() => update());
+  document.addEventListener('click', () => update(), { passive: true });
 }
 
 export function initSyncIndicator(): void {

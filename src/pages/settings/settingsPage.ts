@@ -30,12 +30,12 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
   let currentUser: AppUser | null = null;
 
   const render = (s: AppSettings) => {
-    const isAdmin = currentUser?.role === 'ADMIN' || !authService.isEnabled();
+    const isAdmin = currentUser?.role === 'SUPERUSER' || !authService.isEnabled();
     if (!isAdmin) {
       pageRoot.innerHTML = `
         <div class="card stack">
           <h2 style="margin:0;">Akses Ditolak</h2>
-          <p class="muted">Hanya role ADMIN yang dapat mengubah pengaturan. Login Anda saat ini: <strong>${currentUser?.role ?? '—'}</strong>.</p>
+          <p class="muted">Hanya role <strong>SUPERUSER</strong> yang dapat mengubah pengaturan. Login Anda saat ini: <strong>${currentUser?.role ?? '—'}</strong>.</p>
           <a href="${ROUTES.dashboard}" data-link class="btn btn-primary">Kembali ke Dashboard</a>
         </div>`;
       return;
@@ -139,7 +139,11 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
 
         <section class="card stack">
           <h3 style="margin:0;">Akun</h3>
-          <div class="muted" style="font-size:13px;">Login sebagai: <strong>${currentUser?.email ?? '(belum login)'}</strong> · Role: <strong>${currentUser?.role ?? '—'}</strong></div>
+          <div class="muted" style="font-size:13px;">
+            Login sebagai: <strong>${currentUser?.email ?? '(belum login)'}</strong><br>
+            Role: <strong>${currentUser?.role ?? '—'}</strong>${currentUser?.subRole ? ` (${currentUser.subRole})` : ''}<br>
+            Display: ${currentUser?.displayName ?? '—'}
+          </div>
           ${authService.isEnabled() ? `<button class="btn btn-danger" id="btn-logout" style="max-width:160px;">Logout</button>` : ''}
         </section>
 

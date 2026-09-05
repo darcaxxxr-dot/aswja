@@ -20,6 +20,10 @@ export class Router {
     this.fallback = fallback;
     window.addEventListener('popstate', () => this.render());
     document.addEventListener('click', (e) => this.handleLinkClick(e));
+
+    if (window.location.pathname === '/' || window.location.pathname === '') {
+      window.history.replaceState({}, '', '/login');
+    }
     this.render();
   }
 
