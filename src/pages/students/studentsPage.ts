@@ -298,6 +298,34 @@ export async function renderStudents(root: HTMLElement): Promise<void> {
   });
 
   // Manual add
+  const showDuplicateModal = (existing: Student) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);backdrop-filter:blur(4px);padding:16px;';
+    const cls = allClasses.find((c) => c.id === existing.classId);
+    overlay.innerHTML = `
+      <div class="glass" style="max-width:420px;width:100%;padding:24px;box-shadow:var(--shadow-lg);">
+        <h3 style="margin:0 0 4px;color:var(--color-danger);">⚠ Data Sudah Ada</h3>
+        <p class="muted" style="margin:0 0 16px;font-size:13px;">Siswa dengan NIS atau NISN yang sama sudah terdaftar.</p>
+        <div style="background:rgba(255,255,255,0.6);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:12px;font-size:14px;">
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;">
+            <span class="muted" style="font-size:12px;">NIS</span><strong>${existing.nis}</strong>
+            <span class="muted" style="font-size:12px;">NISN</span><strong>${existing.nisn ?? '—'}</strong>
+            <span class="muted" style="font-size:12px;">Nama</span><strong>${existing.name}</strong>
+            <span class="muted" style="font-size:12px;">L/P</span><strong>${existing.gender === 'L' ? 'Laki-laki' : 'Perempuan'}</strong>
+            <span class="muted" style="font-size:12px;">Kelas</span><strong>${cls ? `${cls.name} (${cls.grade})` : '—'}</strong>
+            <span class="muted" style="font-size:12px;">Status</span><strong>${existing.status ?? 'aktif'}</strong>
+          </div>
+        </div>
+        <div style="margin-top:16px;display:flex;justify-content:flex-end;">
+          <button class="btn btn-primary" id="dup-ok" style="min-height:40px;">Tutup</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector<HTMLButtonElement>('#dup-ok')!.addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  };
+
   root.querySelector<HTMLButtonElement>('#btn-add')!.addEventListener('click', async () => {
     const nis = root.querySelector<HTMLInputElement>('#f-nis')!.value.trim();
     const nisn = root.querySelector<HTMLInputElement>('#f-nisn')!.value.trim() || undefined;
@@ -306,6 +334,11 @@ export async function renderStudents(root: HTMLElement): Promise<void> {
     const classId = root.querySelector<HTMLSelectElement>('#f-class')!.value;
     if (!nis || !name || !classId) {
       log('⚠ NIS, nama, dan kelas wajib diisi.');
+      return;
+    }
+    const existing = allStudents.find((s) => s.nis === nis || (nisn && s.nisn && s.nisn === nisn));
+    if (existing) {
+      showDuplicateModal(existing);
       return;
     }
     try {
