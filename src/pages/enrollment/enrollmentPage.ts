@@ -105,8 +105,10 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
 
   const refreshClasses = async () => {
     classes = await classRepository.list();
-    filterClass.innerHTML = '<option value="">Semua kelas</option>' +
-      classes.map((c) => `<option value="${c.id}">${c.name} (${c.grade})</option>`).join('');
+    if (filterClass) {
+      filterClass.innerHTML = '<option value="">Semua kelas</option>' +
+        classes.map((c) => `<option value="${c.id}">${c.name} (${c.grade})</option>`).join('');
+    }
   };
 
   const refreshStudents = async () => {
@@ -211,15 +213,15 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   const ensureCameraAndModel = async () => {
     if (!faceModelLoader.isLoaded()) {
       log('Memuat model...');
-      btnLoad.disabled = true;
+      if (btnLoad) btnLoad.disabled = true;
       await faceModelLoader.load();
       log('Model siap.');
-      btnLoad.disabled = false;
+      if (btnLoad) btnLoad.disabled = false;
     }
     if (!cameraService.isActive()) {
       log('Memulai kamera...');
       setCamButtons(true);
-      btnStart.disabled = true;
+      if (btnStart) btnStart.disabled = true;
       try {
         await cameraService.start(video);
         log('Kamera aktif.');
@@ -235,12 +237,14 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   };
 
   const runEnrollmentFlow = async (student: Student) => {
+    if (!enrollStep) return;
     enrollStep.style.display = 'block';
     enrollStep.innerHTML = `
       <p class="muted">Sistem akan memverifikasi liveness, lalu menangkap 3 pose. Ikuti instruksi di layar.</p>
       <div id="enroll-status" class="stack" style="margin-top:12px;"></div>
     `;
-    const statusEl = enrollStep.querySelector<HTMLDivElement>('#enroll-status')!;
+    const statusEl = enrollStep.querySelector<HTMLDivElement>('#enroll-status');
+    if (!statusEl) return;
 
     const setStatus = (title: string, detail: string) => {
       statusEl.innerHTML = `<p><strong>${title}</strong></p><p>${detail}</p>`;
