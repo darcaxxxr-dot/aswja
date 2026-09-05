@@ -2,8 +2,9 @@ import { ROUTES } from '@config/app';
 import { router } from '@router/index';
 import { installPromptService } from '@services/pwa/index';
 import { syncService } from '@services/sync/index';
+import { authService, type AppUser } from '@services/auth/index';
 
-export function renderAppShell(activePath: string): string {
+export function renderAppShell(activePath: string, user: AppUser | null = null): string {
   const items: Array<{ href: string; label: string }> = [
     { href: ROUTES.dashboard, label: 'Dashboard' },
     { href: ROUTES.students, label: 'Siswa' },
@@ -23,16 +24,23 @@ export function renderAppShell(activePath: string): string {
 
   const offlineBadge = `<span id="offline-badge" style="display:none;background:#dc2626;color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">OFFLINE</span>`;
   const syncBadge = `<span id="sync-badge" title="Sync status" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;">Sync: —</span>`;
+  const userBadge = user
+    ? `<span id="user-badge" title="${user.email ?? ''} · ${user.role}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">${user.displayName} · ${user.role}</span>`
+    : `<a id="user-badge" href="/login" data-link style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;text-decoration:none;">Login</a>`;
   const installBtn = `<button id="btn-install" class="btn" style="display:none;background:#16a34a;color:#fff;padding:6px 10px;min-height:32px;font-size:13px;">Install App</button>`;
 
   return `
     <header class="app-header">
       <h1>SmartFace Attendance</h1>
       <nav class="app-nav">${nav}</nav>
-      <div class="row" style="margin-left:auto;">${offlineBadge}${syncBadge}${installBtn}</div>
+      <div class="row" style="margin-left:auto;">${offlineBadge}${syncBadge}${userBadge}${installBtn}</div>
     </header>
     <main class="app-main" id="page-root"></main>
   `;
+}
+
+export function renderShellOnly(activePath: string, user: AppUser | null = null): string {
+  return renderAppShell(activePath, user);
 }
 
 export function initInstallPrompt(): void {
@@ -115,88 +123,96 @@ export function pageNotFound(root: HTMLElement): void {
 }
 
 export function initDashboardAndShell(root: HTMLElement): void {
+  const shellWithUser = async () => {
+    const user = await authService.getCurrentUser();
+    return renderAppShell(window.location.pathname, user);
+  };
+
   router.addRoute(ROUTES.dashboard, async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderDashboard } = await import('@pages/dashboard/index');
     await renderDashboard(pageRoot);
   }, 'Dashboard');
 
   router.addRoute(ROUTES.students, async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderStudents } = await import('@pages/students/index');
     await renderStudents(pageRoot);
   }, 'Manajemen Siswa');
 
   router.addRoute(ROUTES.classes, async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderClasses } = await import('@pages/classes/index');
     await renderClasses(pageRoot);
   }, 'Manajemen Kelas');
 
   router.addRoute(ROUTES.enrollment, async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderEnrollment } = await import('@pages/enrollment/index');
     await renderEnrollment(pageRoot);
   }, 'Face Enrollment');
 
   router.addRoute(ROUTES.attendance, async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderAttendance } = await import('@pages/attendance/index');
     await renderAttendance(pageRoot);
   }, 'Sesi Absensi');
 
   router.addRoute(ROUTES.reports, async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderReports } = await import('@pages/reports/index');
     await renderReports(pageRoot);
   }, 'Laporan');
 
+  router.addRoute(ROUTES.settings, async () => {
+    root.innerHTML = await shellWithUser();
+    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const { renderSettings } = await import('@pages/settings/index');
+    await renderSettings(pageRoot);
+  }, 'Pengaturan');
+
+  router.addRoute('/login', async () => {
+    root.innerHTML = '<div id="page-root"></div>';
+    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const { renderLogin } = await import('@pages/login/index');
+    await renderLogin(pageRoot);
+  }, 'Login');
+
   router.addRoute(ROUTES.cameraTest, async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderCameraTest } = await import('@pages/camera-test/index');
     await renderCameraTest(pageRoot);
   }, 'Camera Test');
 
   router.addRoute('/face-test', async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderFaceTest } = await import('@pages/face-test/index');
     await renderFaceTest(pageRoot);
   }, 'Face AI Test');
 
   router.addRoute('/db-test', async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderDbTest } = await import('@pages/db-test/index');
     await renderDbTest(pageRoot);
   }, 'DB Test');
 
   router.addRoute('/supabase-test', async () => {
-    const shell = renderAppShell(window.location.pathname);
-    root.innerHTML = shell;
+    root.innerHTML = await shellWithUser();
     const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
     const { renderSupabaseTest } = await import('@pages/supabase-test/index');
     await renderSupabaseTest(pageRoot);
   }, 'Supabase Test');
 
   const placeholders: Array<[string, string]> = [
-    [ROUTES.settings, 'Pengaturan'],
     [ROUTES.backup, 'Backup & Restore']
   ];
 

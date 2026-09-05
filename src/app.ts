@@ -4,6 +4,14 @@ import { initDashboardAndShell, pageNotFound, initInstallPrompt, initOfflineIndi
 import { getOrCreateDeviceId, getOrCreateSchoolId } from '@utils/device';
 import { databaseService } from '@services/database/index';
 import { syncService } from '@services/sync/index';
+import { authService } from '@services/auth/index';
+
+const PROTECTED_PATHS = ['/dashboard', '/students', '/enrollment', '/classes', '/attendance', '/reports', '/settings'];
+
+function isProtectedPath(path: string): boolean {
+  if (path === '/login' || path === '/' ) return false;
+  return PROTECTED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+}
 
 export function bootstrap(rootElement: HTMLElement): void {
   const deviceId = getOrCreateDeviceId();
@@ -15,13 +23,28 @@ export function bootstrap(rootElement: HTMLElement): void {
     console.error(`[bootstrap] DB open failed: ${msg}`);
   });
 
+  authService.init();
+
   initDashboardAndShell(rootElement);
+
   router.init(rootElement, () => pageNotFound(rootElement));
+
   initInstallPrompt();
   initOfflineIndicator();
   initSyncIndicator();
 
   void syncService.startAutoSync(30000).catch((err: unknown) => {
     console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
+
+  authService.onAuthStateChange((user) => {
+    const path = window.location.pathname;
+    if (!user && isProtectedPath(path)) {
+      window.history.replaceState({}, '', '/login');
+      router.navigate('/login');
+    } else if (user && (path === '/login' || path === '/')) {
+      window.history.replaceState({}, '', '/dashboard');
+      router.navigate('/dashboard');
+    }
   });
 }

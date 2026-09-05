@@ -1,0 +1,1 @@
+export { renderSettings } from './settingsPage';
