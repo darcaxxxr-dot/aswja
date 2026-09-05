@@ -1,6 +1,6 @@
 import { ROUTES } from '@config/app';
 import { settingsService, type AppSettings } from '@services/settings/index';
-import { syncService } from '@services/sync/index';
+import { syncService, setSupabaseRuntimeConfig, clearSupabaseRuntimeConfig } from '@services/sync/index';
 import { authService, type AppUser } from '@services/auth/index';
 import { databaseService } from '@services/database/index';
 import { formatTime } from '@utils/device';
@@ -125,9 +125,16 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
           <h3 style="margin:0;">Supabase Connection</h3>
           <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[4].desc}</p>
           ${s.supabase.isConfigured
-            ? `<div class="muted" style="font-size:13px;">Status: <strong style="color:var(--color-success);">✓ Connected</strong> · URL: <code>${escapeHtml(s.supabase.url)}</code> · Key: <code>****${escapeHtml(s.supabase.keyLast4)}</code></div>`
+            ? `<div class="muted" style="font-size:13px;">Status: <strong style="color:var(--color-success);">✓ Connected</strong> (${s.supabase.source}) · URL: <code>${escapeHtml(s.supabase.url)}</code> · Key: <code>****${escapeHtml(s.supabase.keyLast4)}</code></div>`
             : `<div class="muted" style="font-size:13px;">Status: <strong style="color:var(--color-warn);">⚠ Not configured</strong>. Set <code>VITE_SUPABASE_URL</code> & <code>VITE_SUPABASE_ANON_KEY</code> di <code>.env</code> atau environment Vercel.</div>`
           }
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <input id="rt-url" type="text" placeholder="https://xxxxx.supabase.co" value="${escapeHtml(s.supabase.url)}" style="flex:1;min-width:280px;padding:10px;border:1px solid var(--color-border);border-radius:8px;" />
+            <input id="rt-key" type="password" placeholder="Anon public key" style="flex:1;min-width:280px;padding:10px;border:1px solid var(--color-border);border-radius:8px;" />
+            <button class="btn btn-primary" id="btn-rt-save">Simpan Runtime</button>
+            <button class="btn btn-ghost" id="btn-rt-clear">Reset ke .env</button>
+          </div>
+          <div class="muted" style="font-size:12px;">Runtime config disimpan di localStorage. Untuk production, lebih aman set di env Vercel.</div>
         </section>
 
         <section class="card stack">
@@ -215,6 +222,28 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
       } catch (err: unknown) {
         log(`Sync error: ${err instanceof Error ? err.message : String(err)}`);
       }
+      await refresh();
+    });
+
+    root.querySelector<HTMLButtonElement>('#btn-rt-save')?.addEventListener('click', async () => {
+      const url = root.querySelector<HTMLInputElement>('#rt-url')!.value.trim();
+      const key = root.querySelector<HTMLInputElement>('#rt-key')!.value.trim();
+      if (!url || !key) {
+        log('URL dan key wajib diisi.');
+        return;
+      }
+      if (!url.startsWith('https://') || !url.includes('.supabase.co')) {
+        log('URL harus https://<project>.supabase.co');
+        return;
+      }
+      setSupabaseRuntimeConfig(url, key);
+      log('Runtime config disimpan. Reload untuk efek penuh.');
+      await refresh();
+    });
+
+    root.querySelector<HTMLButtonElement>('#btn-rt-clear')?.addEventListener('click', async () => {
+      clearSupabaseRuntimeConfig();
+      log('Runtime config dihapus. Pakai env (.env).');
       await refresh();
     });
 

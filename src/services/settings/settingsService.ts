@@ -29,6 +29,7 @@ export interface AppSettings {
     url: string;
     keyLast4: string;
     isConfigured: boolean;
+    source: 'env' | 'runtime' | 'none';
   };
 }
 
@@ -71,7 +72,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   supabase: {
     url: '',
     keyLast4: '',
-    isConfigured: false
+    isConfigured: false,
+    source: 'none'
   }
 };
 
@@ -119,7 +121,8 @@ export class SettingsService {
       supabase: {
         url: cfg?.url ?? '',
         keyLast4: cfg?.anonKey ? cfg.anonKey.slice(-4) : '',
-        isConfigured: !!cfg
+        isConfigured: !!cfg,
+        source: cfg?.source ?? 'none'
       }
     };
   }

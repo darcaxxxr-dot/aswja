@@ -221,6 +221,18 @@ export function initDashboardAndShell(root: HTMLElement): void {
   }
 
   router.addRoute(ROUTES.studentImport, () => renderPlaceholder(root, 'Import Siswa'), 'Import Siswa');
-  router.addRoute(`${ROUTES.students}/:id`, () => renderPlaceholder(root, 'Detail Siswa'), 'Detail Siswa');
+  router.addRoute(`${ROUTES.students}/:id`, async (params) => {
+    root.innerHTML = await shellWithUser();
+    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const { renderStudentDetail } = await import('@pages/students/index');
+    await renderStudentDetail(pageRoot, params);
+  }, 'Detail Siswa');
+
+  router.addRoute(ROUTES.studentImport, async () => {
+    root.innerHTML = await shellWithUser();
+    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const { renderStudentImport } = await import('@pages/students/index');
+    await renderStudentImport(pageRoot);
+  }, 'Import Siswa');
   router.addRoute(`${ROUTES.attendance}/:id`, () => renderPlaceholder(root, 'Detail Absensi'), 'Detail Absensi');
 }

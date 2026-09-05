@@ -1,16 +1,50 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-export interface SupabaseConfig {
+const RUNTIME_KEY = 'sf_supabase_runtime';
+
+interface RuntimeConfig {
   url: string;
   anonKey: string;
 }
 
+function readRuntime(): RuntimeConfig | null {
+  try {
+    const raw = localStorage.getItem(RUNTIME_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as RuntimeConfig;
+    if (parsed.url && parsed.anonKey) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export interface SupabaseConfig {
+  url: string;
+  anonKey: string;
+  source: 'env' | 'runtime';
+}
+
 export function getSupabaseConfig(): SupabaseConfig | null {
+  const runtime = readRuntime();
+  if (runtime) {
+    return { url: runtime.url, anonKey: runtime.anonKey, source: 'runtime' };
+  }
   const url = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !anonKey) return null;
   if (!url.startsWith('https://') || !url.includes('.supabase.co')) return null;
-  return { url, anonKey };
+  return { url, anonKey, source: 'env' };
+}
+
+export function setSupabaseRuntimeConfig(url: string, anonKey: string): void {
+  localStorage.setItem(RUNTIME_KEY, JSON.stringify({ url, anonKey }));
+  cachedClient = null;
+}
+
+export function clearSupabaseRuntimeConfig(): void {
+  localStorage.removeItem(RUNTIME_KEY);
+  cachedClient = null;
 }
 
 let cachedClient: SupabaseClient | null = null;
@@ -20,7 +54,7 @@ export function getSupabaseClient(): SupabaseClient | null {
   const cfg = getSupabaseConfig();
   if (!cfg) return null;
   cachedClient = createClient(cfg.url, cfg.anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
+    auth: { persistSession: cfg.source === 'runtime', autoRefreshToken: cfg.source === 'runtime' },
     db: { schema: 'public' }
   });
   return cachedClient;
