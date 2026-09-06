@@ -44,8 +44,8 @@ export class FaceMatchingService {
       return { matched: false, candidate: null, topCandidates: [] };
     }
 
-    const useCosine = options.useCosine ?? true;
-    const baseThreshold = options.threshold ?? 0.7;
+    const useCosine = options.useCosine ?? false;
+    const baseThreshold = options.threshold ?? 0.48;
     const minQuality = options.minQuality ?? 0;
 
     const filteredDb =
@@ -60,18 +60,31 @@ export class FaceMatchingService {
     const adaptiveThreshold = FaceMatchingService.computeAdaptiveThreshold(filteredDb.length, baseThreshold);
 
     const candidates: FaceMatchCandidate[] = filteredDb.map((rec) => {
-      let score = 0;
-      if (useCosine) {
-        score = FaceMatchingService.cosineSimilarity(queryEmbedding, rec.embedding);
-      } else {
-        const dist = FaceMatchingService.euclideanDistance(queryEmbedding, rec.embedding);
-        score = this.distanceToScore(dist);
+      // Multi-vector matching: query against all stored embeddings, take best (min distance / max score)
+      const storedEmbeddings = rec.embedding as number[][];
+
+      let bestScore = useCosine ? -1 : Infinity;
+      let bestDistance = 0;
+
+      for (const storedEmb of storedEmbeddings) {
+        if (useCosine) {
+          const sim = FaceMatchingService.cosineSimilarity(queryEmbedding, storedEmb);
+          if (sim > bestScore) bestScore = sim;
+        } else {
+          const dist = FaceMatchingService.euclideanDistance(queryEmbedding, storedEmb);
+          if (dist < bestScore) {
+            bestScore = dist;
+            bestDistance = dist;
+          }
+        }
       }
+
+      const score = useCosine ? bestScore : this.distanceToScore(bestScore);
       return {
         id: rec.id,
         label: rec.label,
         score: Math.round(score * 1000) / 1000,
-        distance: useCosine ? 0 : Math.round(FaceMatchingService.euclideanDistance(queryEmbedding, rec.embedding) * 1000) / 1000
+        distance: useCosine ? 0 : Math.round(bestDistance * 1000) / 1000
       };
     });
 

@@ -10,7 +10,7 @@ function pushAsync(): void {
 
 export interface CreateFaceProfileInput {
   studentId: string;
-  embedding: number[];
+  embedding: number[][];
   modelVersion: string;
   qualityScore: number;
 }

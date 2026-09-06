@@ -1,0 +1,105 @@
+Dokumentasi Teknis Sistem Pengenalan Wajah Hybrid (PWA & Edge AI)1. Konfigurasi Sistem & Dependensi LibraryImplementasi membutuhkan kombinasi library untuk PWA, penyimpanan lokal, dan pengolahan AI di sisi klien.KomponenLibrary & VersiPeran TeknisFace AI Engine@vladmandic/face-api (v1.7+)Eksekusi model AI dengan akselerasi WebGL/WebGPU.Local Storagedexie (v3.2+)Wrapper IndexedDB untuk manajemen vektor dan log lokal.PWA Pluginvite-plugin-pwa (v0.16+)Manajemen Service Worker dan caching aset model AI.Backend Sync@supabase/supabase-js (v2.30+)Real-time subscriptions dan Bulk Push data log.Konfigurasi Service Worker (Vite PWA)Untuk memastikan model AI (tiny_face_detector dan face_recognition) tersimpan di Cache Storage browser saat inisialisasi, tambahkan pola glob pada vite.config.ts:TypeScript// vite.config.ts
+import { VitePWA } from 'vite-plugin-pwa';
+
+export default {
+  plugins: [
+    VitePWA({
+      registerType: 'autoUpdate',
+      workbox: {
+        // Cache aset model AI agar dapat diakses offline
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,weights,json}'],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/\[ID-SUPABASE\]\.supabase\.co\/rest\/v1\/.*/i,
+            handler: 'NetworkFirst',
+            options: { cacheName: 'supabase-api-cache' }
+          }
+        ]
+      }
+    })
+  ]
+}
+2. Implementasi Modul UtamaA. Inisialisasi & Pengunduhan Model (Online)Proses ini berjalan pada siklus hidup awal aplikasi (onMount atau useEffect).Pemanggilan Model Lokal: Model dimuat dari direktori statis /models (yang otomatis di-cache oleh Workbox).Sinkronisasi Vektor (Pull): Mengambil data vektor 128-dimensi dari Supabase dan menyimpannya di Dexie.js.TypeScriptimport * as faceapi from '@vladmandic/face-api';
+
+async function initializeSystem() {
+  // 1. Inisialisasi akselerasi GPU & Load Model
+  await faceapi.tf.setBackend('webgl');
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+    faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
+    faceapi.nets.faceLandmark68Net.loadFromUri('/models')
+  ]);
+
+  // 2. Tarik data dari Supabase jika koneksi tersedia
+  if (navigator.onLine) {
+    const { data, error } = await supabase.from('student_face_embeddings').select('*');
+    if (!error && data) {
+      await db.faces.clear(); // Refresh DB lokal
+      await db.faces.bulkAdd(formatDataForDexie(data));
+    }
+  }
+}
+B. Proses Absensi & Pencocokan WajahUntuk menjaga kestabilan frame rate (menghindari overheating), ekstraksi frame dibatasi 3-5 FPS, dan resolusi kamera dikunci pada VGA (640x480).Setup Kamera (Resolusi VGA):JavaScriptconst stream = await navigator.mediaDevices.getUserMedia({
+  video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
+});
+videoElement.srcObject = stream;
+Frame Throttling & Matching Loop:TypeScriptsetInterval(async () => {
+  if (videoElement.paused || videoElement.ended) return;
+
+  // Deteksi dengan TinyFaceDetector (Cepat & Ringan)
+  const detection = await faceapi
+    .detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  if (detection) {
+    const capturedVector = detection.descriptor;
+    processMatching(capturedVector);
+  }
+}, 250); // Eksekusi setiap 250ms (4 FPS)
+Logika Pencocokan & Batas Ambang (Threshold):Mencari Euclidean Distance terkecil antara vektor kamera dengan database lokal di IndexedDB. Batas maksimal kemiripan (THRESHOLD_MATCH) ditetapkan pada 0.48.C. Adaptive Multi-Vector Update (Continual Learning)Sistem memperbarui profil wajah secara otomatis jika menemukan perubahan penampilan fisik atau kondisi cahaya yang sah.Batas Vektor: Maksimal 5 vektor per siswa.Kondisi Trigger: 0.38 < Distance <= 0.48.TypeScriptasync function handleAdaptiveLearning(studentId: string, currentVector: Float32Array, distance: number) {
+  if (distance > 0.38 && distance <= 0.48) {
+    const student = await db.faces.get({ studentId });
+    
+    // Implementasi batas maksimum (FIFO)
+    if (student.embeddings.length >= 5) {
+      student.embeddings.shift(); // Hapus vektor tertua
+    }
+    
+    student.embeddings.push(Array.from(currentVector));
+    await db.faces.put(student); // Update lokal
+    
+    // Antre untuk push ke Supabase
+    await db.syncQueue.add({
+      type: 'VECTOR_UPDATE',
+      studentId: studentId,
+      newEmbedding: Array.from(currentVector),
+      status: 'pending'
+    });
+  }
+}
+D. Hybrid Data SynchronizationMemastikan data yang diproses secara offline tidak hilang dan perangkat multiklien selalu tersinkronisasi.Online Listener & Bulk Push:TypeScriptwindow.addEventListener('online', async () => {
+  const pendingLogs = await db.attendanceLogs.where('synced').equals(false).toArray();
+  if (pendingLogs.length > 0) {
+    const { error } = await supabase.from('attendance_logs').insert(pendingLogs);
+    if (!error) {
+      // Tandai sebagai tersinkronisasi di lokal
+      await db.attendanceLogs.where('synced').equals(false).modify({ synced: true });
+    }
+  }
+
+  // Lakukan hal yang sama untuk antrean VECTOR_UPDATE
+});
+Real-time Broadcast (Supabase Realtime):Memastikan perangkat B mendapatkan pembaruan vektor jika perangkat A melakukan Adaptive Update.TypeScriptsupabase
+  .channel('public:student_face_embeddings')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'student_face_embeddings' }, payload => {
+    // Masukkan vektor baru dari payload ke IndexedDB lokal
+    updateLocalDatabase(payload.new);
+  })
+  .subscribe();
+3. Pipeline Ketahanan Lingkungan (Robustness & Non-Functional)Untuk memenuhi target inferensi di bawah 300 ms dengan tingkat privasi tinggi, sistem menerapkan mitigasi lingkungan secara proaktif.Privasi (Vector-Only Storage)Tidak ada fungsi canvas.toDataURL() atau pengunggahan file gambar yang dijalankan. Objek yang ditransmisikan dan disimpan murni berupa Array Float32 yang direpresentasikan dalam format JSON, membuat rekayasa balik gambar wajah menjadi mustahil.Filter Kontras & Kecerahan (Pre-processing Canvas)Sebelum dianalisis oleh AI, piksel video ditarik ke hidden canvas untuk normalisasi pencahayaan area ekstrem (silau atau gelap).JavaScript// Algoritma peningkatan kontras ringan via 2D Context
+const ctx = hiddenCanvas.getContext('2d');
+ctx.drawImage(videoElement, 0, 0, 640, 480);
+// Terapkan penyesuaian filter CSS sebelum deteksi jika area gelap
+ctx.filter = 'brightness(1.2) contrast(1.1)';
+Deteksi Keburaman (Blur Gate)Mencegah False Rejection akibat gambar yang blur saat siswa bergerak. Sistem menghitung varians warna tepi (Laplacian). Jika di bawah ambang batas ketajaman, frame ditolak sebelum masuk ke AI.Mekanisme: Mengekstrak ImageData dari kanvas, mengubahnya ke matriks grayscale, dan menerapkan Laplacian kernel ([0, 1, 0, 1, -4, 1, 0, 1, 0]).Eksekusi: Jika nilai variance dari matriks tersebut $< 100$ (kategori buram), frame dilewati dan sistem menunggu frame berikutnya di interval 250 ms selanjutnya.

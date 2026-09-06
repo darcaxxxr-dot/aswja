@@ -36,6 +36,11 @@ export class FaceModelLoader {
 
     this.loadingPromise = (async () => {
       try {
+        const tf = (faceapi as unknown as { tf: { setBackend: (b: string) => Promise<void> } }).tf;
+        if (tf) {
+          await tf.setBackend('webgl');
+        }
+
         const tasks: Array<{ name: FaceModelName; run: () => Promise<unknown> }> = [
           {
             name: 'tinyFaceDetector',

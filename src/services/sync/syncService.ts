@@ -79,7 +79,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
 
   if (table === 'faceProfiles') {
     const fp = row as FaceProfile;
-    out.embedding = Array.isArray(fp.embedding) ? fp.embedding : [];
+    out.embedding = Array.isArray(fp.embedding) && fp.embedding.every((e) => Array.isArray(e)) ? fp.embedding : [];
   }
   if (table === 'attendanceRecords') {
     const ar = row as AttendanceRecord;
@@ -148,11 +148,11 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
   }
 
   if (table === 'faceProfiles') {
-    const f = processed as Record<string, unknown> & { studentId: string; embedding: number[]; modelVersion: string; qualityScore: number };
+    const f = processed as Record<string, unknown> & { studentId: string; embedding: number[][]; modelVersion: string; qualityScore: number };
     return {
       id,
       studentId: f.studentId,
-      embedding: Array.isArray(f.embedding) ? f.embedding : [],
+      embedding: Array.isArray(f.embedding) && f.embedding.every((e) => Array.isArray(e)) ? f.embedding : [],
       modelVersion: f.modelVersion ?? 'unknown',
       qualityScore: Number(f.qualityScore ?? 0),
       createdAt,

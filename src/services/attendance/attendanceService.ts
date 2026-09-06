@@ -74,9 +74,9 @@ export function determineAutoStatus(config: AttendanceConfig, now: Date = new Da
 }
 
 export class AttendanceService {
-  private getEmbeddings = async (): Promise<Array<{ id: string; label: string; embedding: number[]; qualityScore: number; createdAt: number; studentId: string }>> => {
+  private getEmbeddings = async (): Promise<Array<{ id: string; label: string; embedding: number[][]; qualityScore: number; createdAt: number; studentId: string }>> => {
     const students = await studentRepository.list();
-    const out: Array<{ id: string; label: string; embedding: number[]; qualityScore: number; createdAt: number; studentId: string }> = [];
+    const out: Array<{ id: string; label: string; embedding: number[][]; qualityScore: number; createdAt: number; studentId: string }> = [];
     for (const s of students) {
       const profiles = await faceProfileRepository.listForStudent(s.id);
       for (const p of profiles) {

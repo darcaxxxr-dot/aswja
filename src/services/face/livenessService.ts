@@ -67,7 +67,7 @@ export class LivenessService {
     const movementThreshold = options.movementThreshold ?? 0.012;
     const startTime = Date.now();
 
-    const detector = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 });
+    const detector = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 });
     const snapshots: LandmarkSnapshot[] = [];
     let lastPromptUpdate = 0;
     let stopped = false;

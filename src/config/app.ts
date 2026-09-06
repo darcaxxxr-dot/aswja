@@ -14,7 +14,7 @@ export const CAMERA_CONFIG = {
 };
 
 export const FACE_CONFIG = {
-  inputSize: 416,
+  inputSize: 224,
   scoreThreshold: 0.45
 } as const;
 

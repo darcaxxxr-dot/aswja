@@ -106,7 +106,7 @@ function renderDetail(root: HTMLElement, data: PageData): void {
                 <div>
                   <div><strong>ID:</strong> <code>${escapeHtml(p.id)}</code></div>
                   <div class="muted" style="font-size:12px;">Model: ${escapeHtml(p.modelVersion)} · Quality: ${p.qualityScore.toFixed(2)}</div>
-                  <div class="muted" style="font-size:12px;">Embedding: ${p.embedding.length} dimensi · Dibuat: ${formatDate(p.createdAt)}</div>
+                  <div class="muted" style="font-size:12px;">Embedding: ${p.embedding.length} vectors × ${p.embedding[0]?.length ?? 0} dimensi · Dibuat: ${formatDate(p.createdAt)}</div>
                 </div>
                 <button class="btn btn-danger" data-del-profile="${p.id}">Hapus Profile</button>
               </div>

@@ -28,7 +28,7 @@ export interface ClassRoom {
 export interface FaceProfile {
   id: string;
   studentId: string;
-  embedding: number[];
+  embedding: number[][];
   modelVersion: string;
   qualityScore: number;
   createdAt: number;

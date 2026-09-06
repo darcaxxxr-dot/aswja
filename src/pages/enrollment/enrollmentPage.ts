@@ -262,8 +262,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     if (isVisualizing || !video || !overlay || !overlayCtx) return;
     isVisualizing = true;
     instructionOverlay!.style.display = 'block';
-    
-    // Set actual canvas size to match video resolution for 1:1 drawing coordinates
+
     const loop = async () => {
       if (!isVisualizing) return;
       if (video.videoWidth > 0 && video.videoHeight > 0) {
@@ -271,26 +270,48 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
         overlay.height = video.videoHeight;
         overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
+        // Draw center guide lines
+        const cx = overlay.width / 2;
+        const cy = overlay.height / 2;
+        overlayCtx.strokeStyle = 'rgba(255,255,255,0.35)';
+        overlayCtx.lineWidth = 1;
+        overlayCtx.setLineDash([6, 4]);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(cx, 0);
+        overlayCtx.lineTo(cx, overlay.height);
+        overlayCtx.stroke();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(0, cy);
+        overlayCtx.lineTo(overlay.width, cy);
+        overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
+
+        // Center dot
+        overlayCtx.fillStyle = 'rgba(255,255,255,0.6)';
+        overlayCtx.beginPath();
+        overlayCtx.arc(cx, cy, 4, 0, Math.PI * 2);
+        overlayCtx.fill();
+
         try {
           const res = await faceEmbeddingService.computeFromVideo(video, { inputSize: FACE_CONFIG.inputSize, scoreThreshold: FACE_CONFIG.scoreThreshold });
-          
+
           if (res) {
             const { box } = res.detection;
             // Draw YOLO-style bounding box
-            overlayCtx.strokeStyle = '#10b981'; // var(--color-success)
+            overlayCtx.strokeStyle = '#10b981';
             overlayCtx.lineWidth = 4;
             overlayCtx.strokeRect(box.x, box.y, box.width, box.height);
-            
+
             // Draw Quality Score Background
             const quality = faceEmbeddingService.computeQualityScore(res.detection, video.videoWidth, video.videoHeight, res.sharpness, res.lighting);
             const qualityPct = Math.round(quality * 100);
             const text = `Quality: ${qualityPct}%`;
-            
+
             overlayCtx.font = 'bold 20px sans-serif';
             const m = overlayCtx.measureText(text);
             overlayCtx.fillStyle = '#10b981';
             overlayCtx.fillRect(box.x, box.y - 30, m.width + 16, 30);
-            
+
             // Draw Quality Score Text
             overlayCtx.fillStyle = '#ffffff';
             overlayCtx.fillText(text, box.x + 8, box.y - 8);
@@ -299,7 +320,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
           // Ignore visualizer errors to not break enrollment
         }
       }
-      
+
       if (isVisualizing) {
         requestAnimationFrame(loop);
       }

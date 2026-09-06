@@ -1,6 +1,5 @@
 import { generateId } from '@utils/device';
-import { faceEmbeddingService } from './faceEmbeddingService';
-import { faceMatchingService } from './faceMatchingService';
+import { faceEmbeddingService, BLUR_THRESHOLD } from './faceEmbeddingService';
 import { faceModelLoader } from './modelLoader';
 import { FaceError } from './types';
 import type { EmbeddingRecord, EnrollmentSample } from './types';
@@ -20,7 +19,11 @@ export interface EnrollmentProgressListener {
 
 export interface EnrollmentOptions {
   minQualityScore?: number;
+  sampleCount?: number;
 }
+
+const DEFAULT_SAMPLE_COUNT = 5;
+const DEFAULT_POSES: EnrollmentPose[] = ['front', 'left', 'right'];
 
 export class FaceEnrollmentService {
   private listeners: EnrollmentProgressListener[] = [];
@@ -63,6 +66,12 @@ export class FaceEnrollmentService {
       );
     }
 
+    if (result.lapVar !== undefined && result.lapVar < BLUR_THRESHOLD) {
+      throw new FaceError(
+        `Wajah terlalu blurr (lapVar=${Math.round(result.lapVar)}). Pastikan posisi telanjang dan pencahayaan baik.`
+      );
+    }
+
     return {
       pose,
       embedding: result.embedding,
@@ -76,30 +85,32 @@ export class FaceEnrollmentService {
   async enroll(
     video: HTMLVideoElement,
     label: string,
-    poses: EnrollmentPose[] = ['front', 'left', 'right'],
+    poses: EnrollmentPose[] = DEFAULT_POSES,
     options: EnrollmentOptions = {}
   ): Promise<EmbeddingRecord> {
     if (!label || !label.trim()) {
       throw new FaceError('Label siswa wajib diisi.');
     }
 
+    const sampleCount = options.sampleCount ?? DEFAULT_SAMPLE_COUNT;
     const samples: EnrollmentSample[] = [];
-    for (let i = 0; i < poses.length; i++) {
-      const pose = poses[i];
-      this.emit({ pose, index: i, total: poses.length, qualityScore: 0 });
+
+    for (let i = 0; i < sampleCount; i++) {
+      const pose = poses[i % poses.length];
+      this.emit({ pose, index: i, total: sampleCount, qualityScore: 0 });
       const sample = await this.captureSample(video, pose, options);
       samples.push(sample);
-      this.emit({ pose, index: i + 1, total: poses.length, qualityScore: sample.qualityScore });
+      this.emit({ pose, index: i + 1, total: sampleCount, qualityScore: sample.qualityScore });
     }
 
-    const embedding = faceMatchingService.averageEmbeddings(samples.map((s) => s.embedding));
+    const embeddings = samples.map((s) => s.embedding);
     const avgQuality =
       Math.round((samples.reduce((a, b) => a + b.qualityScore, 0) / samples.length) * 100) / 100;
 
     return {
       id: generateId('FP'),
       label: label.trim(),
-      embedding,
+      embedding: embeddings,
       qualityScore: avgQuality,
       createdAt: Date.now()
     };

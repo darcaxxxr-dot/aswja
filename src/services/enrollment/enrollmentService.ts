@@ -1,5 +1,5 @@
 import { cameraService } from '@services/camera';
-import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, faceMatchingService, type EnrollmentPose } from '@services/face';
+import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, type EnrollmentPose } from '@services/face';
 import { studentRepository, faceProfileRepository } from '@repositories/index';
 import { settingRepository } from '@repositories/index';
 import type { FaceProfile, Student } from '@models/types';
@@ -157,9 +157,8 @@ export class EnrollmentService {
 
     const avgQuality = Math.round((totalQuality / samples.length) * 100) / 100;
 
-    const embedding = faceMatchingService.averageEmbeddings(samples.map((s) => s.embedding));
     const profiles = await faceProfileRepository.replaceForStudent(student.id, [
-      { embedding, modelVersion: MODEL_VERSION, qualityScore: avgQuality }
+      { embedding: samples.map((s) => s.embedding), modelVersion: MODEL_VERSION, qualityScore: avgQuality }
     ]);
 
     return {
@@ -178,9 +177,9 @@ export class EnrollmentService {
     return this.enrollStudent(student, video, ['front', 'left', 'right'], onProgress);
   }
 
-  async loadAllEmbeddings(): Promise<Array<{ id: string; label: string; embedding: number[]; qualityScore: number }>> {
+  async loadAllEmbeddings(): Promise<Array<{ id: string; label: string; embedding: number[][]; qualityScore: number }>> {
     const students = await studentRepository.list();
-    const out: Array<{ id: string; label: string; embedding: number[]; qualityScore: number }> = [];
+    const out: Array<{ id: string; label: string; embedding: number[][]; qualityScore: number }> = [];
     for (const s of students) {
       const profiles = await faceProfileRepository.listForStudent(s.id);
       for (const p of profiles) {

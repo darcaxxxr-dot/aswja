@@ -17,6 +17,7 @@ export interface ComputeEmbeddingResult {
   embedding: number[];
   sharpness: number;
   lighting: number;
+  lapVar?: number;
 }
 
 function toFaceBox(raw: FaceApiWithLandmarks): FaceBox {
@@ -34,6 +35,7 @@ function toFaceBox(raw: FaceApiWithLandmarks): FaceBox {
 interface RoiStats {
   sharpness: number;
   lighting: number;
+  lapVar: number;
 }
 
 function clampRoi(box: { x: number; y: number; width: number; height: number }, frameWidth: number, frameHeight: number): { x: number; y: number; width: number; height: number } {
@@ -45,7 +47,7 @@ function clampRoi(box: { x: number; y: number; width: number; height: number }, 
 }
 
 function computeRoiStats(source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement, box: { x: number; y: number; width: number; height: number }, sourceWidth: number, sourceHeight: number): RoiStats {
-  const defaultStats: RoiStats = { sharpness: 0.5, lighting: 0.5 };
+  const defaultStats: RoiStats = { sharpness: 0.5, lighting: 0.5, lapVar: 0 };
   if (!sourceWidth || !sourceHeight) return defaultStats;
   const roi = clampRoi(box, sourceWidth, sourceHeight);
   const canvas = document.createElement('canvas');
@@ -91,8 +93,10 @@ function computeRoiStats(source: HTMLVideoElement | HTMLImageElement | HTMLCanva
   const luminanceScore = Math.max(0, 1 - Math.abs(mean - 128) / 100);
   const contrastScore = Math.min(1, std / 55);
   const lighting = Math.max(0, Math.min(1, luminanceScore * 0.7 + contrastScore * 0.3));
-  return { sharpness, lighting };
+  return { sharpness, lighting, lapVar };
 }
+
+export const BLUR_THRESHOLD = 100;
 
 export class FaceEmbeddingService {
   async computeFromVideo(
@@ -122,7 +126,8 @@ export class FaceEmbeddingService {
         detection: faceBox,
         embedding: [],
         sharpness: stats.sharpness,
-        lighting: stats.lighting
+        lighting: stats.lighting,
+        lapVar: stats.lapVar
       };
     }
 
@@ -143,7 +148,8 @@ export class FaceEmbeddingService {
       detection: faceBox,
       embedding: Array.from(detection.descriptor),
       sharpness: stats.sharpness,
-      lighting: stats.lighting
+      lighting: stats.lighting,
+      lapVar: stats.lapVar
     };
   }
 
@@ -174,7 +180,8 @@ export class FaceEmbeddingService {
       detection: faceBox,
       embedding: Array.from(detection.descriptor),
       sharpness: stats.sharpness,
-      lighting: stats.lighting
+      lighting: stats.lighting,
+      lapVar: stats.lapVar
     };
   }
 

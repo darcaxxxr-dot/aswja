@@ -19,7 +19,7 @@ export interface FaceBox {
 export interface EmbeddingRecord {
   id: string;
   label: string;
-  embedding: number[];
+  embedding: number[][];
   qualityScore: number;
   createdAt: number;
 }
