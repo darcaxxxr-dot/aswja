@@ -45,7 +45,7 @@ export class FaceMatchingService {
     }
 
     const useCosine = options.useCosine ?? true;
-    const baseThreshold = options.threshold ?? 0.75;
+    const baseThreshold = options.threshold ?? 0.65;
     const minQuality = options.minQuality ?? 0;
 
     const filteredDb =
@@ -87,7 +87,7 @@ export class FaceMatchingService {
 
   private static computeAdaptiveThreshold(dbSize: number, baseThreshold: number): number {
     if (dbSize <= 1) return baseThreshold;
-    const lift = Math.min(0.08, Math.log10(dbSize) * 0.015);
+    const lift = Math.min(0.03, Math.log10(dbSize) * 0.008);
     return Math.min(0.95, baseThreshold + lift);
   }
 

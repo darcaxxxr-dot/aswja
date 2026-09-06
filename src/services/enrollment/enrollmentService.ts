@@ -1,5 +1,5 @@
 import { cameraService } from '@services/camera';
-import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, faceMatchingService, type EnrollmentPose } from '@services/face';
+import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, type EnrollmentPose } from '@services/face';
 import { studentRepository, faceProfileRepository } from '@repositories/index';
 import { settingRepository } from '@repositories/index';
 import type { FaceProfile, Student } from '@models/types';
@@ -8,8 +8,8 @@ import { FaceError } from '@services/face';
 const MODEL_VERSION = 'face-api-tiny-v1';
 const POSE_LABELS: Record<string, string> = {
   front: 'Hadap Depan',
-  left: 'Hadap Kiri',
-  right: 'Hadap Kanan'
+  left: 'Serong Kiri',
+  right: 'Serong Kanan'
 };
 type PoseKey = 'front' | 'left' | 'right';
 
@@ -118,7 +118,7 @@ export class EnrollmentService {
         // continue to next retry
       }
       if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 800));
+        await new Promise((r) => setTimeout(r, 1500));
       }
     }
     if (!livenessOk) {
@@ -146,7 +146,7 @@ export class EnrollmentService {
           break;
         } catch {
           if (attempt < 3) {
-            await new Promise((r) => setTimeout(r, 800));
+            await new Promise((r) => setTimeout(r, 1500));
           }
         }
       }
@@ -155,12 +155,15 @@ export class EnrollmentService {
       }
     }
 
-    const embedding = faceMatchingService.averageEmbeddings(samples.map((s) => s.embedding));
     const avgQuality = Math.round((totalQuality / samples.length) * 100) / 100;
 
-    const profiles = await faceProfileRepository.replaceForStudent(student.id, [
-      { embedding, modelVersion: MODEL_VERSION, qualityScore: avgQuality }
-    ]);
+    const profiles = await faceProfileRepository.replaceForStudent(student.id, 
+      samples.map(s => ({ 
+        embedding: s.embedding, 
+        modelVersion: MODEL_VERSION, 
+        qualityScore: s.qualityScore 
+      }))
+    );
 
     return {
       studentId: student.id,

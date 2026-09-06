@@ -2,10 +2,13 @@ import * as faceapi from '@vladmandic/face-api';
 import { faceModelLoader } from './modelLoader';
 import { FaceError } from './types';
 import type { LivenessChallenge, LivenessResult } from './types';
+import { FACE_CONFIG } from '@config/app';
 
 export interface LivenessOptions {
   maxDurationMs?: number;
   movementThreshold?: number;
+  blinkEARThreshold?: number;
+  blinkConsecutiveFrames?: number;
 }
 
 interface LandmarkSnapshot {
@@ -31,7 +34,7 @@ function eyeAspectRatio(eye: { x: number; y: number }[]): number {
   const vertical1 = Math.hypot(p2.x - p6.x, p2.y - p6.y);
   const vertical2 = Math.hypot(p3.x - p5.x, p3.y - p5.y);
   const horizontal = Math.hypot(p1.x - p4.x, p1.y - p4.y);
-  if (horizontal === 0) return 0;
+  if (horizontal === 0) return 1;
   return (vertical1 + vertical2) / (2 * horizontal);
 }
 
@@ -61,14 +64,20 @@ export class LivenessService {
       throw new FaceError('Video belum siap untuk liveness check.');
     }
 
-    const maxDurationMs = options.maxDurationMs ?? 6000;
+    const maxDurationMs = options.maxDurationMs ?? 8000;
     const movementThreshold = options.movementThreshold ?? 0.012;
+    const blinkEARThreshold = options.blinkEARThreshold ?? 0.20;
+    const blinkConsecutiveFrames = options.blinkConsecutiveFrames ?? 2;
     const startTime = Date.now();
 
-    const detector = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    const detector = new faceapi.TinyFaceDetectorOptions({
+      inputSize: FACE_CONFIG.inputSize,
+      scoreThreshold: FACE_CONFIG.scoreThreshold
+    });
     const snapshots: LandmarkSnapshot[] = [];
     let lastPromptUpdate = 0;
     let stopped = false;
+    let blinkClosedCount = 0;
 
     const promptMsg = (msg: string) => {
       const now = Date.now();
@@ -89,7 +98,10 @@ export class LivenessService {
       }
     };
 
-    promptFor(challenge);
+    // Baseline settling: first 700ms to establish neutral nose position
+    let baselineNoseX: number | null = null;
+    let baselineNoseY: number | null = null;
+    let baselineSamples: number[] = [];
 
     while (!stopped && Date.now() - startTime < maxDurationMs) {
       const detection = await faceapi
@@ -105,17 +117,38 @@ export class LivenessService {
       const snap = extractSnapshot(detection);
       snapshots.push(snap);
 
-      if (challenge === 'blink') {
-        if (snap.leftEyeAspect < 0.18 && snap.rightEyeAspect < 0.18) {
-          stopped = true;
-          break;
+      // Build baseline from first ~700ms
+      if (Date.now() - startTime < 700) {
+        baselineSamples.push(snap.noseX);
+        baselineSamples.push(snap.noseY);
+        if (baselineSamples.length >= 20) { // ~10 samples x,y
+          baselineNoseX = median(baselineSamples.slice(0, baselineSamples.length/2));
+          baselineNoseY = median(baselineSamples.slice(baselineSamples.length/2));
         }
-        promptMsg('Silakan kedipkan mata Anda.');
+        promptMsg('Menyiapkan baseline...');
+        await new Promise((r) => setTimeout(r, 150));
+        continue;
+      }
+
+      if (challenge === 'blink') {
+        const leftEAR = snap.leftEyeAspect;
+        const rightEAR = snap.rightEyeAspect;
+        const bothClosed = leftEAR < blinkEARThreshold && rightEAR < blinkEARThreshold;
+        if (bothClosed) {
+          blinkClosedCount++;
+          if (blinkClosedCount >= blinkConsecutiveFrames) {
+            stopped = true;
+            break;
+          }
+          promptMsg('Mata terdeteksi tertutup...');
+        } else {
+          blinkClosedCount = 0;
+          promptMsg('Silakan kedipkan mata Anda.');
+        }
       } else {
-        if (snapshots.length >= 2) {
-          const first = snapshots[0];
-          const dx = (snap.noseX - first.noseX) / video.videoWidth;
-          const dy = (snap.noseY - first.noseY) / video.videoHeight;
+        if (baselineNoseX !== null && baselineNoseY !== null && snapshots.length >= 2) {
+          const dx = (snap.noseX - baselineNoseX) / video.videoWidth;
+          const dy = (snap.noseY - baselineNoseY) / video.videoHeight;
           const turnedLeft = dx < -movementThreshold;
           const turnedRight = dx > movementThreshold;
           const upDown = Math.abs(dy) > movementThreshold * 1.5;
@@ -148,6 +181,15 @@ export class LivenessService {
     }
     return { success: true, challenge, durationMs };
   }
+}
+
+// Helper: median of array
+function median(arr: number[]): number {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
 }
 
 export const livenessService = new LivenessService();

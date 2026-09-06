@@ -1,4 +1,5 @@
 import * as faceapi from '@vladmandic/face-api';
+import { FACE_CONFIG } from '@config/app';
 import { faceModelLoader } from './modelLoader';
 import type { BoundingBox, FaceBox, FaceLandmarks } from './types';
 
@@ -19,8 +20,8 @@ export interface DetectOptions {
 
 function makeDetectorOptions(inputSize?: number, scoreThreshold?: number): faceapi.TinyFaceDetectorOptions {
   return new faceapi.TinyFaceDetectorOptions({
-    inputSize: inputSize ?? 320,
-    scoreThreshold: scoreThreshold ?? 0.5
+    inputSize: inputSize ?? FACE_CONFIG.inputSize,
+    scoreThreshold: scoreThreshold ?? FACE_CONFIG.scoreThreshold
   });
 }
 

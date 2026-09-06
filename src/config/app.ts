@@ -8,10 +8,15 @@ export const APP_CONFIG = {
 
 export const CAMERA_CONFIG = {
   defaultFacingMode: 'user' as const,
-  defaultWidth: 640,
-  defaultHeight: 480,
+  defaultWidth: 1280,
+  defaultHeight: 720,
   facingModes: ['user', 'environment'] as Array<'user' | 'environment'>
 };
+
+export const FACE_CONFIG = {
+  inputSize: 512,
+  scoreThreshold: 0.4
+} as const;
 
 export const ATTENDANCE_CONFIG = {
   defaultOnTimeUntil: '07:15',
@@ -21,11 +26,11 @@ export const ATTENDANCE_CONFIG = {
 };
 
 export const RECOGNITION_CONFIG = {
-  targetThreshold: 0.8,
+  targetThreshold: 0.7,
   minDetectionMs: 500,
   targetRecognitionMs: 2000,
   detectionIntervalMs: 200
-};
+} as const;
 
 export const ROUTES = {
   dashboard: '/dashboard',

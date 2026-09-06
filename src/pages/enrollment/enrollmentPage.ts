@@ -1,7 +1,10 @@
 import { cameraService, CameraError } from '@services/camera';
 import { faceModelLoader, FaceError } from '@services/face';
+import { faceEmbeddingService } from '@services/face/faceEmbeddingService';
 import { enrollmentService } from '@services/enrollment';
-import { studentRepository, classRepository, faceProfileRepository } from '@repositories/index';
+import { studentRepository } from '@repositories/studentRepository';
+import { classRepository } from '@repositories/classRepository';
+import { faceProfileRepository } from '@repositories/faceProfileRepository';
 import { formatTime } from '@utils/device';
 import type { Student, ClassRoom } from '@models/types';
 
@@ -37,6 +40,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
           </div>
           <video id="camera-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:none;"></video>
           <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
+          <div id="instruction-overlay" style="position:absolute;bottom:10%;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.8);color:#fff;padding:12px 24px;border-radius:30px;font-size:18px;font-weight:bold;text-align:center;display:none;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.4);border:2px solid var(--color-primary);transition:all 0.3s ease;"></div>
         </div>
 
         <div id="enroll-step" style="margin-top:12px;padding:12px;background:rgba(255,255,255,0.6);border:1px solid var(--color-border);border-radius:var(--radius-md);display:none;"></div>
@@ -86,6 +90,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   const placeholder = root.querySelector<HTMLDivElement>('#camera-placeholder');
   const overlay = root.querySelector<HTMLCanvasElement>('#overlay');
   const overlayCtx = overlay?.getContext('2d');
+  const instructionOverlay = root.querySelector<HTMLDivElement>('#instruction-overlay');
 
   const enrollWorkflow = root.querySelector<HTMLDivElement>('#enroll-workflow');
   const enrollStudentName = root.querySelector<HTMLSpanElement>('#enroll-student-name');
@@ -251,6 +256,62 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     }
   };
 
+  let isVisualizing = false;
+  const startVisualizer = () => {
+    if (isVisualizing || !video || !overlay || !overlayCtx) return;
+    isVisualizing = true;
+    instructionOverlay!.style.display = 'block';
+    
+    // Set actual canvas size to match video resolution for 1:1 drawing coordinates
+    const loop = async () => {
+      if (!isVisualizing) return;
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+        overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+        try {
+          const res = await faceEmbeddingService.computeFromVideo(video, { inputSize: 512, scoreThreshold: 0.4 });
+          
+          if (res) {
+            const { box } = res.detection;
+            // Draw YOLO-style bounding box
+            overlayCtx.strokeStyle = '#10b981'; // var(--color-success)
+            overlayCtx.lineWidth = 4;
+            overlayCtx.strokeRect(box.x, box.y, box.width, box.height);
+            
+            // Draw Quality Score Background
+            const quality = faceEmbeddingService.computeQualityScore(res.detection, video.videoWidth, video.videoHeight, res.sharpness, res.lighting);
+            const qualityPct = Math.round(quality * 100);
+            const text = `Quality: ${qualityPct}%`;
+            
+            overlayCtx.font = 'bold 20px sans-serif';
+            const m = overlayCtx.measureText(text);
+            overlayCtx.fillStyle = '#10b981';
+            overlayCtx.fillRect(box.x, box.y - 30, m.width + 16, 30);
+            
+            // Draw Quality Score Text
+            overlayCtx.fillStyle = '#ffffff';
+            overlayCtx.fillText(text, box.x + 8, box.y - 8);
+          }
+        } catch (err) {
+          // Ignore visualizer errors to not break enrollment
+        }
+      }
+      
+      if (isVisualizing) {
+        requestAnimationFrame(loop);
+      }
+    };
+    loop();
+  };
+
+  const stopVisualizer = () => {
+    isVisualizing = false;
+    if (overlayCtx && overlay) overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    if (instructionOverlay) instructionOverlay.style.display = 'none';
+  };
+
   const runEnrollmentFlow = async (student: Student) => {
     if (!enrollStep || !video) return;
     enrollStep.style.display = 'block';
@@ -266,10 +327,14 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     };
 
     try {
+      startVisualizer();
       const result = await enrollmentService.enrollStudentWithFlow(student, video, {
         onStep: (step, msg) => {
-          const title = step === 'liveness' ? 'Verifikasi Liveness' : step === 'front' ? 'Pose 1: Hadap Depan' : step === 'right' ? 'Pose 2: Hadap Kanan' : 'Pose 3: Hadap Kiri';
+          const title = step === 'liveness' ? 'Verifikasi Liveness' : step === 'front' ? 'Pose 1: Hadap Depan' : step === 'right' ? 'Pose 2: Serong Kanan' : 'Pose 3: Serong Kiri';
           setStatus(title, msg);
+          if (instructionOverlay) {
+            instructionOverlay.innerHTML = `<div style="font-size:14px;color:#94a3b8;margin-bottom:4px;">${title}</div><div>${msg}</div>`;
+          }
           log(msg);
         }
       });
@@ -282,7 +347,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
       log(`ERROR enroll: ${msg}`);
     } finally {
       isEnrolling = false;
-      if (overlayCtx && overlay) overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      stopVisualizer();
       await renderTable();
     }
   };

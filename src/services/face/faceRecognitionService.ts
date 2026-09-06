@@ -2,12 +2,12 @@ import { faceDetectionService } from './faceDetectionService';
 import { faceEmbeddingService } from './faceEmbeddingService';
 import { faceMatchingService } from './faceMatchingService';
 import { faceModelLoader } from './modelLoader';
-import { FaceError } from './types';
 import type {
   EmbeddingRecord,
   FaceBox,
   RecognitionResult
 } from './types';
+import { FACE_CONFIG } from '@config/app';
 
 export interface RecognizeOptions {
   threshold?: number;
@@ -29,9 +29,9 @@ export class FaceRecognitionService {
   ): Promise<FaceBox | null> {
     await this.ensureReady();
     return faceDetectionService.detectSingle(video, {
-      withLandmarks: options.withLandmarks ?? true,
-      inputSize: options.inputSize ?? 320,
-      scoreThreshold: options.scoreThreshold ?? 0.5
+      withLandmarks: options.withLandmarks ?? false,
+      inputSize: options.inputSize ?? FACE_CONFIG.inputSize,
+      scoreThreshold: options.scoreThreshold ?? FACE_CONFIG.scoreThreshold
     });
   }
 
@@ -41,16 +41,18 @@ export class FaceRecognitionService {
     options: RecognizeOptions = {}
   ): Promise<RecognitionResult | null> {
     if (video.readyState < 2) return null;
-    const threshold = options.threshold ?? 0.75;
+    const threshold = options.threshold ?? 0.7;
     const useCosine = options.useCosine ?? true;
     const minQuality = options.minQuality ?? 0;
+    const inputSize = options.inputSize ?? FACE_CONFIG.inputSize;
+    const scoreThreshold = options.scoreThreshold ?? FACE_CONFIG.scoreThreshold;
 
     await this.ensureReady();
     const startedAt = performance.now();
 
     const result = await faceEmbeddingService.computeFromVideo(video, {
-      inputSize: options.inputSize ?? 320,
-      scoreThreshold: options.scoreThreshold ?? 0.5
+      inputSize,
+      scoreThreshold
     });
     if (!result) return null;
 
@@ -75,10 +77,7 @@ export class FaceRecognitionService {
     database: EmbeddingRecord[],
     options: { threshold?: number; useCosine?: boolean; minQuality?: number } = {}
   ): Promise<RecognitionResult> {
-    if (embedding.length === 0) {
-      throw new FaceError('Embedding kosong, tidak dapat melakukan recognition.');
-    }
-    const threshold = options.threshold ?? 0.75;
+    const threshold = options.threshold ?? 0.7;
     const useCosine = options.useCosine ?? true;
     const minQuality = options.minQuality ?? 0;
 
