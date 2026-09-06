@@ -170,12 +170,6 @@ export async function cloudSelect<T = CloudRow>(
   let q;
   if (table === 'schools') {
     q = client.from(table).select('*').eq('id', schoolId);
-  } else if (table === 'face_profiles') {
-    // Filter via subquery: only face_profiles whose student belongs to this school
-    q = client
-      .from(table)
-      .select('*')
-      .filter('student_id', 'in', `(select id from public.students where school_id='${schoolId}')`);
   } else {
     q = client.from(table).select('*').eq('school_id', schoolId);
   }

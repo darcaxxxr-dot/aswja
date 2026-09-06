@@ -113,10 +113,17 @@ export async function renderClasses(root: HTMLElement): Promise<void> {
 
   const populateAcademicYearOptions = async (select: HTMLSelectElement, includeAddNew = false) => {
     allAcademicYears = await academicYearRepository.list();
-    const existingNames = Array.from(select.options).map((o) => o.value).filter(Boolean);
-    const names = Array.from(new Set([...DEFAULT_ACADEMIC_YEARS.map((y) => y.name), ...existingNames, ...allAcademicYears.map((y) => y.name)]));
+    
+    // Auto-create defaults if none exist
+    if (allAcademicYears.length === 0) {
+      for (const defaultAy of DEFAULT_ACADEMIC_YEARS) {
+        await academicYearRepository.create(defaultAy);
+      }
+      allAcademicYears = await academicYearRepository.list();
+    }
+
     select.innerHTML = (includeAddNew ? '<option value="">— Pilih / Tambah —</option>' : '<option value="">Semua Tahun Ajaran</option>') +
-      names.map((n) => `<option value="${n}">${n}</option>`).join('') +
+      allAcademicYears.map((y) => `<option value="${y.id}">${y.name}</option>`).join('') +
       (includeAddNew ? '<option value="__add_new__">+ Tambah Tahun Ajaran</option>' : '');
   };
 
@@ -134,10 +141,10 @@ export async function renderClasses(root: HTMLElement): Promise<void> {
 
   const applyFilter = () => {
     const qGrade = gradeFilter.toLowerCase();
-    const qAy = ayFilter.toLowerCase();
+    const qAy = ayFilter; // Now an ID, so don't toLowerCase it
     filtered = allClasses.filter((c) => {
       if (qGrade && c.grade.toLowerCase() !== qGrade) return false;
-      if (qAy && c.academicYearId.toLowerCase() !== qAy) return false;
+      if (qAy && c.academicYearId !== qAy) return false;
       return true;
     });
     if (sortKey) applySort();
@@ -191,7 +198,7 @@ export async function renderClasses(root: HTMLElement): Promise<void> {
         return `<tr style="border-top:1px solid var(--color-border);">
           <td style="padding:8px;text-align:center;color:var(--color-text-muted);">${start + i + 1}</td>
           <td style="padding:8px;"><strong>${c.grade}</strong></td>
-          <td style="padding:8px;">${c.name}</td>
+          <td style="padding:8px;">${c.name} <span class="muted" style="font-size:12px;">(${allAcademicYears.find(ay => ay.id === c.academicYearId)?.name || c.academicYearId})</span></td>
           <td style="padding:8px;text-align:center;">${students}</td>
           <td style="padding:8px;text-align:center;">
             <button class="btn btn-ghost" data-edit="${c.id}" style="padding:4px 8px;min-height:28px;font-size:12px;">Edit</button>
@@ -456,9 +463,9 @@ export async function renderClasses(root: HTMLElement): Promise<void> {
     if (fAy.value === '__add_new__') {
       const newAy = await new Promise<{ name: string; startDate: string; endDate: string } | null>((resolve) => showAcademicYearModal(resolve));
       if (newAy) {
-        await academicYearRepository.create(newAy);
+        const created = await academicYearRepository.create(newAy);
         await populateAcademicYearOptions(fAy, true);
-        fAy.value = newAy.name;
+        fAy.value = created.id;
       } else {
         fAy.value = '';
       }
