@@ -59,8 +59,24 @@ type TableRowMap = {
   attendanceRecords: AttendanceRecord;
 };
 
+function camelToSnake(str: string): string {
+  // Converts camelCase to snake_case
+  return str.replace(/[A-Z]/g, (letter, index) => (index === 0 ? letter.toLowerCase() : '_' + letter.toLowerCase()));
+}
+
 function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };
+  // Convert camelCase keys to snake_case for Supabase compatibility
+  const camelKeys = Object.keys(out) as string[];
+  for (const key of camelKeys) {
+    const snakeKey = camelToSnake(key);
+    if (snakeKey !== key) {
+      out[snakeKey] = out[key];
+      // Remove camelCase key to avoid duplication
+      delete out[key];
+    }
+  }
+
   if (table === 'faceProfiles') {
     const fp = row as FaceProfile;
     out.embedding = Array.isArray(fp.embedding) ? fp.embedding : [];
@@ -84,14 +100,26 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
   return out;
 }
 
+function snakeToCamel(str: string): string {
+  // Converts snake_case to camelCase
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
 function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: number; createdAt?: number; timestamp?: number; startTime?: number; endTime?: number }>(table: TableKey, raw: Record<string, unknown>): T | null {
   if (!raw.id) return null;
   const id = String(raw.id);
   const createdAt = raw.created_at ? new Date(String(raw.created_at)).getTime() : Date.now();
   const updatedAt = raw.updated_at ? new Date(String(raw.updated_at)).getTime() : Date.now();
 
+  // Convert snake_case keys in raw to camelCase for local type compatibility
+  const processed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const camelKey = snakeToCamel(key);
+    processed[camelKey] = value;
+  }
+
   if (table === 'attendanceRecords') {
-    const ar = raw as Record<string, unknown> & { sessionId: string; studentId: string; status: string; confidence: number; deviceId: string };
+    const ar = processed as Record<string, unknown> & { sessionId: string; studentId: string; status: string; confidence: number; deviceId: string };
     return {
       id,
       schoolId: String(ar.school_id ?? ''),
@@ -105,7 +133,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
     } as unknown as T;
   }
   if (table === 'attendanceSessions') {
-    const s = raw as Record<string, unknown> & { classId: string; date: string; status: string; createdBy: string };
+    const s = processed as Record<string, unknown> & { classId: string; date: string; status: string; createdBy: string };
     return {
       id,
       schoolId: String(s.school_id ?? ''),
@@ -120,7 +148,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
   }
 
   if (table === 'faceProfiles') {
-    const f = raw as Record<string, unknown> & { studentId: string; embedding: number[]; modelVersion: string; qualityScore: number };
+    const f = processed as Record<string, unknown> & { studentId: string; embedding: number[]; modelVersion: string; qualityScore: number };
     return {
       id,
       studentId: f.studentId,
@@ -133,7 +161,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
   }
 
   if (table === 'students') {
-    const s = raw as Record<string, unknown> & { nis: string; name: string; gender: string; classId: string };
+    const s = processed as Record<string, unknown> & { nis: string; name: string; gender: string; classId: string };
     return {
       id,
       schoolId: String(s.school_id ?? ''),
@@ -149,20 +177,22 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
   }
 
   if (table === 'classes') {
-    const c = raw as Record<string, unknown> & { name: string; grade: string; academicYearId: string };
+    const c = processed as Record<string, unknown> & { name: string; grade: string; academicYearId: string };
+    // Try to get academicYearId from both possible keys (snake_case from DB)
+    const academicYearId = c.academic_year_id ?? c.academicYearId ?? '';
     return {
       id,
       schoolId: String(c.school_id ?? ''),
       name: c.name,
       grade: c.grade,
-      academicYearId: c.academicYearId,
+      academicYearId: String(academicYearId),
       createdAt,
       updatedAt
     } as unknown as T;
   }
 
   if (table === 'academicYears') {
-    const a = raw as Record<string, unknown> & { name: string; startDate: string; endDate: string; isActive: boolean };
+    const a = processed as Record<string, unknown> & { name: string; startDate: string; endDate: string; isActive: boolean };
     return {
       id,
       schoolId: String(a.school_id ?? ''),
@@ -175,7 +205,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
   }
 
   if (table === 'schools') {
-    const sh = raw as Record<string, unknown> & { name: string };
+    const sh = processed as Record<string, unknown> & { name: string };
     return {
       id,
       name: sh.name,
@@ -225,7 +255,10 @@ export class SyncService {
 
     for (const t of PUSH_TABLES) {
       const all = (await db[t.local].toArray()) as TableRowMap[TableKey][];
-      const schoolRows = all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId || t.local === 'faceProfiles' || t.local === 'attendanceRecords');
+      // For schools table, push all schools (not just the current one)
+      const schoolRows = t.local === 'schools'
+        ? all
+        : all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId || t.local === 'faceProfiles' || t.local === 'attendanceRecords');
       const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r));
       const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[]);
       if (errors.length > 0) {

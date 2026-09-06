@@ -163,7 +163,10 @@ export async function cloudSelect<T = CloudRow>(
 ): Promise<{ data: T[]; error?: string }> {
   const client = getSupabaseClient();
   if (!client) return { data: [], error: 'Supabase client not configured' };
-  let q = client.from(table).select('*').eq('school_id', schoolId);
+  // Schools table doesn't have school_id column (it's the root entity)
+  let q = table === 'schools'
+    ? client.from(table).select('*')
+    : client.from(table).select('*').eq('school_id', schoolId);
   if (sinceIso) q = q.gt('updated_at', sinceIso);
   const { data, error } = await q;
   if (error) return { data: [], error: error.message };
