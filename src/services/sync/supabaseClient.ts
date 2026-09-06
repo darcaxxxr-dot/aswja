@@ -163,10 +163,23 @@ export async function cloudSelect<T = CloudRow>(
 ): Promise<{ data: T[]; error?: string }> {
   const client = getSupabaseClient();
   if (!client) return { data: [], error: 'Supabase client not configured' };
-  // Schools table doesn't have school_id column (it's the root entity)
-  let q = table === 'schools'
-    ? client.from(table).select('*')
-    : client.from(table).select('*').eq('school_id', schoolId);
+
+  // Tables that don't have a direct school_id column:
+  // - 'schools' is the root entity itself
+  // - 'face_profiles' links via student_id -> students.school_id
+  let q;
+  if (table === 'schools') {
+    q = client.from(table).select('*').eq('id', schoolId);
+  } else if (table === 'face_profiles') {
+    // Filter via subquery: only face_profiles whose student belongs to this school
+    q = client
+      .from(table)
+      .select('*')
+      .filter('student_id', 'in', `(select id from public.students where school_id='${schoolId}')`);
+  } else {
+    q = client.from(table).select('*').eq('school_id', schoolId);
+  }
+
   if (sinceIso) q = q.gt('updated_at', sinceIso);
   const { data, error } = await q;
   if (error) return { data: [], error: error.message };

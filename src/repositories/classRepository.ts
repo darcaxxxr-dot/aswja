@@ -1,6 +1,12 @@
 import { db } from '@services/database/dexieSchema';
 import { generateId, now, getOrCreateSchoolId } from '@utils/device';
+import { syncService } from '@services/sync/syncService';
 import type { ClassRoom } from '@models/types';
+
+/** Fire-and-forget push to Supabase after local write */
+function pushAsync(): void {
+  void syncService.pushAll().catch(() => undefined);
+}
 
 export interface CreateClassInput {
   name: string;
@@ -41,6 +47,7 @@ export class ClassRepository {
       updatedAt: ts
     };
     await db.classes.add(row);
+    pushAsync();
     return row;
   }
 
@@ -55,6 +62,7 @@ export class ClassRepository {
     }
     const updated: ClassRoom = { ...existing, ...patch, updatedAt: now() };
     await db.classes.put(updated);
+    pushAsync();
     return updated;
   }
 
@@ -64,6 +72,7 @@ export class ClassRepository {
       throw new Error('Kelas masih memiliki siswa. Hapus siswa terlebih dahulu.');
     }
     await db.classes.delete(id);
+    pushAsync();
   }
 }
 

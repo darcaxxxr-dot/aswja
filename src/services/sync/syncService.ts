@@ -253,13 +253,39 @@ export class SyncService {
     const schoolId = getOrCreateSchoolId();
     const result: Record<string, number> = {};
 
+    // Build a studentId → schoolId lookup map for faceProfiles injection
+    const allStudents = await db.students.toArray();
+    const studentSchoolMap = new Map<string, string>(allStudents.map((s) => [s.id, s.schoolId]));
+
     for (const t of PUSH_TABLES) {
       const all = (await db[t.local].toArray()) as TableRowMap[TableKey][];
-      // For schools table, push all schools (not just the current one)
-      const schoolRows = t.local === 'schools'
-        ? all
-        : all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId || t.local === 'faceProfiles' || t.local === 'attendanceRecords');
-      const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r));
+
+      // Filter rows that belong to this school
+      let schoolRows: TableRowMap[TableKey][];
+      if (t.local === 'schools') {
+        // Schools: push all (root entity)
+        schoolRows = all;
+      } else if (t.local === 'faceProfiles') {
+        // FaceProfiles: filter by student's schoolId
+        schoolRows = all.filter((r) => {
+          const fp = r as FaceProfile;
+          return studentSchoolMap.get(fp.studentId) === schoolId;
+        });
+      } else {
+        // All other tables: filter by direct schoolId field
+        schoolRows = all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId);
+      }
+
+      const cloudRows = schoolRows.map((r) => {
+        const row = toCloudRow(t.local, r);
+        // Inject school_id into face_profiles cloud row
+        if (t.local === 'faceProfiles') {
+          const fp = r as FaceProfile;
+          row.school_id = studentSchoolMap.get(fp.studentId) ?? schoolId;
+        }
+        return row;
+      });
+
       const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[]);
       if (errors.length > 0) {
         throw new SupabaseError(`Push ${t.cloud}: ${errors.join('; ')}`);

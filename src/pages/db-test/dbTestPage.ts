@@ -1,10 +1,8 @@
-import {
-  classRepository,
-  studentRepository,
-  faceProfileRepository,
-  attendanceRepository,
-  settingRepository
-} from '@repositories/index';
+import { classRepository } from '@repositories/classRepository';
+import { studentRepository } from '@repositories/studentRepository';
+import { faceProfileRepository } from '@repositories/faceProfileRepository';
+import { attendanceRepository } from '@repositories/attendanceRepository';
+import { settingRepository } from '@repositories/settingRepository';
 import { databaseService } from '@services/database/index';
 import type { Gender } from '@models/types';
 import { formatTime } from '@utils/device';

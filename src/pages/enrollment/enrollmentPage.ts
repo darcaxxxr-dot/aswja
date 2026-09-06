@@ -47,6 +47,16 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
           <h3 style="margin:0;">Daftar Siswa <span id="student-total" class="muted" style="font-size:14px;font-weight:400;"></span></h3>
           <span id="page-info" class="muted" style="font-size:13px;"></span>
         </div>
+        <div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+          <select id="filter-class" style="flex:1;min-width:160px;padding:6px 10px;border-radius:var(--radius-sm);border:1px solid var(--color-border);background:rgba(255,255,255,0.8);font-size:13px;">
+            <option value="">Semua kelas</option>
+          </select>
+          <select id="filter-status" style="flex:1;min-width:140px;padding:6px 10px;border-radius:var(--radius-sm);border:1px solid var(--color-border);background:rgba(255,255,255,0.8);font-size:13px;">
+            <option value="">Semua status</option>
+            <option value="without">Belum Enroll</option>
+            <option value="with">Sudah Enroll</option>
+          </select>
+        </div>
         <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--color-border);">
           <table class="data-table" style="width:100%;border-collapse:collapse;font-size:14px;background:rgba(255,255,255,0.5);">
             <thead>

@@ -1,11 +1,17 @@
 import { db } from '@services/database/dexieSchema';
 import { generateId, now, getOrCreateSchoolId, getOrCreateDeviceId } from '@utils/device';
+import { syncService } from '@services/sync/syncService';
 import type {
   AttendanceRecord,
   AttendanceSession,
   AttendanceStatus,
   SessionStatus
 } from '@models/types';
+
+/** Fire-and-forget push to Supabase after local write */
+function pushAsync(): void {
+  void syncService.pushAll().catch(() => undefined);
+}
 
 export interface CreateSessionInput {
   classId: string;
@@ -54,6 +60,7 @@ export class AttendanceRepository {
       createdAt: ts
     };
     await db.attendanceSessions.add(row);
+    pushAsync();
     return row;
   }
 
@@ -66,6 +73,7 @@ export class AttendanceRepository {
       endTime: now()
     };
     await db.attendanceSessions.put(updated);
+    pushAsync();
     return updated;
   }
 
@@ -102,6 +110,7 @@ export class AttendanceRepository {
       createdAt: ts
     };
     await db.attendanceRecords.add(row);
+    pushAsync();
     return row;
   }
 
@@ -110,6 +119,7 @@ export class AttendanceRepository {
     if (!existing) throw new Error(`Record ${id} not found`);
     const updated: AttendanceRecord = { ...existing, status };
     await db.attendanceRecords.put(updated);
+    pushAsync();
     return updated;
   }
 

@@ -1,6 +1,12 @@
 import { db } from '@services/database/dexieSchema';
 import { generateId, now, getOrCreateSchoolId } from '@utils/device';
+import { syncService } from '@services/sync/syncService';
 import type { Gender, Student, StudentStatus } from '@models/types';
+
+/** Fire-and-forget push to Supabase after local write */
+function pushAsync(): void {
+  void syncService.pushAll().catch(() => undefined);
+}
 
 export interface CreateStudentInput {
   nis: string;
@@ -43,6 +49,7 @@ export class StudentRepository {
       updatedAt: ts
     };
     await db.students.add(row);
+    pushAsync();
     return row;
   }
 
@@ -54,6 +61,7 @@ export class StudentRepository {
     if (!existing) throw new Error(`Student ${id} not found`);
     const updated: Student = { ...existing, ...patch, updatedAt: now() };
     await db.students.put(updated);
+    pushAsync();
     return updated;
   }
 
@@ -62,6 +70,7 @@ export class StudentRepository {
       await db.faceProfiles.where('studentId').equals(id).delete();
       await db.students.delete(id);
     });
+    pushAsync();
   }
 }
 

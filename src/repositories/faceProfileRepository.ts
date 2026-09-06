@@ -1,6 +1,12 @@
 import { db } from '@services/database/dexieSchema';
 import { generateId, now } from '@utils/device';
+import { syncService } from '@services/sync/syncService';
 import type { FaceProfile } from '@models/types';
+
+/** Fire-and-forget push to Supabase after local write */
+function pushAsync(): void {
+  void syncService.pushAll().catch(() => undefined);
+}
 
 export interface CreateFaceProfileInput {
   studentId: string;
@@ -39,6 +45,7 @@ export class FaceProfileRepository {
       updatedAt: ts
     };
     await db.faceProfiles.add(row);
+    pushAsync();
     return row;
   }
 
@@ -60,15 +67,18 @@ export class FaceProfileRepository {
       await db.faceProfiles.where('studentId').equals(studentId).delete();
       await db.faceProfiles.bulkAdd(rows);
     });
+    pushAsync();
     return rows;
   }
 
   async remove(id: string): Promise<void> {
     await db.faceProfiles.delete(id);
+    pushAsync();
   }
 
   async removeAllForStudent(studentId: string): Promise<void> {
     await db.faceProfiles.where('studentId').equals(studentId).delete();
+    pushAsync();
   }
 
   async countAll(): Promise<number> {
