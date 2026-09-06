@@ -2,7 +2,6 @@ import { db } from '@services/database/dexieSchema';
 import { settingRepository } from '@repositories/index';
 import { getOrCreateSchoolId } from '@utils/device';
 import { getSupabaseClient, SupabaseError, cloudSelect, cloudUpsert } from './supabaseClient';
-import { authService } from '@services/auth/index';
 import type { ClassRoom, Student, FaceProfile, AttendanceSession, AttendanceRecord, AcademicYear, School } from '@models/types';
 
 export interface SyncReport {
@@ -287,12 +286,14 @@ export class SyncService {
       };
     }
 
-    if (!authService.isAuthenticated()) {
+    // Allow sync without authentication - use schoolId for RLS
+    const schoolId = getOrCreateSchoolId();
+    if (!schoolId) {
       return {
         ok: false,
         pushed,
         pulled,
-        errors: ['not authenticated — RLS will block. Login first.'],
+        errors: ['schoolId not available'],
         durationMs: 0,
         lastSyncAt: 0
       };

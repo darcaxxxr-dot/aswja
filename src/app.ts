@@ -38,14 +38,30 @@ export function bootstrap(rootElement: HTMLElement): void {
   initIdleIndicator();
   initSyncIndicator();
 
+  // Start auto-sync on app boot (not just on login)
   let autoSyncStarted = false;
-  const startAutoSyncOnce = () => {
+  const startAutoSyncOnce = async () => {
     if (autoSyncStarted) return;
     autoSyncStarted = true;
-    void syncService.startAutoSync(30000).catch((err: unknown) => {
+    try {
+      await syncService.startAutoSync(30000);
+      console.info('[bootstrap] Auto-sync started (30s interval)');
+    } catch (err: unknown) {
       console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
+    }
+    // Also do an initial pull from Supabase on startup if online
+    if (navigator.onLine) {
+      try {
+        await syncService.runFullSync();
+        console.info('[bootstrap] Initial sync completed');
+      } catch (err: unknown) {
+        console.warn(`[bootstrap] initial sync failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   };
+
+  // Start auto-sync immediately on boot (doesn't require login)
+  void startAutoSyncOnce();
 
   authService.onAuthStateChange((user) => {
     const path = window.location.pathname;
@@ -55,9 +71,6 @@ export function bootstrap(rootElement: HTMLElement): void {
     } else if (user && (path === '/login' || path === '/')) {
       window.history.replaceState({}, '', '/dashboard');
       router.navigate('/dashboard');
-    }
-    if (user) {
-      startAutoSyncOnce();
     }
   });
 
