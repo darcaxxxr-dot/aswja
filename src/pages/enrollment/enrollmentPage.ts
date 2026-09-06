@@ -6,6 +6,7 @@ import { studentRepository } from '@repositories/studentRepository';
 import { classRepository } from '@repositories/classRepository';
 import { faceProfileRepository } from '@repositories/faceProfileRepository';
 import { formatTime } from '@utils/device';
+import { FACE_CONFIG } from '@config/app';
 import type { Student, ClassRoom } from '@models/types';
 
 export async function renderEnrollment(root: HTMLElement): Promise<void> {
@@ -39,7 +40,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
             <div>Klik <strong>Mulai Kamera</strong> untuk memulai enrollment.</div>
           </div>
           <video id="camera-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:none;"></video>
-          <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
+          <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;object-fit:cover;"></canvas>
           <div id="instruction-overlay" style="position:absolute;bottom:10%;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.8);color:#fff;padding:12px 24px;border-radius:30px;font-size:18px;font-weight:bold;text-align:center;display:none;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.4);border:2px solid var(--color-primary);transition:all 0.3s ease;"></div>
         </div>
 
@@ -271,7 +272,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
         overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
         try {
-          const res = await faceEmbeddingService.computeFromVideo(video, { inputSize: 512, scoreThreshold: 0.4 });
+          const res = await faceEmbeddingService.computeFromVideo(video, { inputSize: FACE_CONFIG.inputSize, scoreThreshold: FACE_CONFIG.scoreThreshold });
           
           if (res) {
             const { box } = res.detection;

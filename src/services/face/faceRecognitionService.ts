@@ -41,7 +41,7 @@ export class FaceRecognitionService {
     options: RecognizeOptions = {}
   ): Promise<RecognitionResult | null> {
     if (video.readyState < 2) return null;
-    const threshold = options.threshold ?? 0.7;
+    const threshold = options.threshold ?? 0.75;
     const useCosine = options.useCosine ?? true;
     const minQuality = options.minQuality ?? 0;
     const inputSize = options.inputSize ?? FACE_CONFIG.inputSize;
@@ -77,7 +77,7 @@ export class FaceRecognitionService {
     database: EmbeddingRecord[],
     options: { threshold?: number; useCosine?: boolean; minQuality?: number } = {}
   ): Promise<RecognitionResult> {
-    const threshold = options.threshold ?? 0.7;
+    const threshold = options.threshold ?? 0.75;
     const useCosine = options.useCosine ?? true;
     const minQuality = options.minQuality ?? 0;
 

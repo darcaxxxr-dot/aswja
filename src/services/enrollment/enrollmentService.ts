@@ -1,5 +1,5 @@
 import { cameraService } from '@services/camera';
-import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, type EnrollmentPose } from '@services/face';
+import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, faceMatchingService, type EnrollmentPose } from '@services/face';
 import { studentRepository, faceProfileRepository } from '@repositories/index';
 import { settingRepository } from '@repositories/index';
 import type { FaceProfile, Student } from '@models/types';
@@ -157,13 +157,10 @@ export class EnrollmentService {
 
     const avgQuality = Math.round((totalQuality / samples.length) * 100) / 100;
 
-    const profiles = await faceProfileRepository.replaceForStudent(student.id, 
-      samples.map(s => ({ 
-        embedding: s.embedding, 
-        modelVersion: MODEL_VERSION, 
-        qualityScore: s.qualityScore 
-      }))
-    );
+    const embedding = faceMatchingService.averageEmbeddings(samples.map((s) => s.embedding));
+    const profiles = await faceProfileRepository.replaceForStudent(student.id, [
+      { embedding, modelVersion: MODEL_VERSION, qualityScore: avgQuality }
+    ]);
 
     return {
       studentId: student.id,

@@ -45,7 +45,7 @@ export class FaceMatchingService {
     }
 
     const useCosine = options.useCosine ?? true;
-    const baseThreshold = options.threshold ?? 0.65;
+    const baseThreshold = options.threshold ?? 0.7;
     const minQuality = options.minQuality ?? 0;
 
     const filteredDb =
