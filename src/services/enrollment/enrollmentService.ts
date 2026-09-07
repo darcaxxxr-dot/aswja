@@ -149,11 +149,12 @@ export class EnrollmentService {
         }
       }
       if (!livenessOk) {
-        // ===== INI KUNCI: Tambahkan bypassable =====
-        const error = new FaceError(`Liveness gagal setelah 3 percobaan. ${livenessError}`);
-        (error as any).bypassable = true;
-        console.log('[DEBUG] Throwing bypassable error:', error);
-        throw error;
+        // FaceError dengan bypassable: true agar UI menampilkan tombol bypass
+        throw new FaceError(
+          `Liveness gagal setelah 3 percobaan. ${livenessError}`,
+          undefined,
+          { bypassable: true }
+        );
       }
     } else {
       livenessBypassed = true;

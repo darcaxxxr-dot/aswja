@@ -390,9 +390,31 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     enrollStep.innerHTML = `
       <p class="muted">Sistem akan memverifikasi liveness, lalu menangkap 3 pose. Ikuti instruksi di layar.</p>
       <div id="enroll-status" class="stack" style="margin-top:12px;"></div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="btn-skip-liveness" class="btn" style="background:rgba(245,158,11,0.15);color:#92400e;border:1px solid #f59e0b;padding:6px 12px;font-size:12px;min-height:32px;">⏭ Lewati Liveness (Bypass)</button>
+        <button id="btn-cancel-flow" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;min-height:32px;">✗ Batalkan</button>
+      </div>
     `;
     const statusEl = enrollStep.querySelector<HTMLDivElement>('#enroll-status');
     if (!statusEl) return;
+
+    // Tombol bypass liveness - operator bisa skip tanpa menunggu timeout
+    const btnSkipLiveness = enrollStep.querySelector<HTMLButtonElement>('#btn-skip-liveness');
+    btnSkipLiveness?.addEventListener('click', () => {
+      bypassLiveness = true;
+      log('Operator memilih bypass liveness. Lanjut enrollment tanpa verifikasi...');
+      btnSkipLiveness.disabled = true;
+      btnSkipLiveness.textContent = '✓ Liveness dilewati';
+      // Re-run flow dengan skipLiveness=true
+      void runEnrollmentFlow(student);
+    });
+
+    // Tombol cancel - hentikan enrollment
+    const btnCancelFlow = enrollStep.querySelector<HTMLButtonElement>('#btn-cancel-flow');
+    btnCancelFlow?.addEventListener('click', () => {
+      cancelEnrollment = true;
+      log('Membatalkan enrollment dari flow...');
+    });
 
     const setStatus = (title: string, detail: string) => {
       if (cancelEnrollment) return;
@@ -424,7 +446,7 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
       console.error('Enrollment error:', err);
 
       // Cek apakah error adalah FaceError dengan properti bypassable
-      const isBypassable = (err as any)?.bypassable === true;
+      const isBypassable = err instanceof FaceError && err.bypassable === true;
 
       if (isBypassable && !bypassLiveness) {
         // --- TAMPILAN BYPASS YANG DIPERINDAH ---

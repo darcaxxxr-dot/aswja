@@ -59,8 +59,11 @@ export interface LivenessResult {
 }
 
 export class FaceError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  /** When true, the UI should offer a "Bypass" option to skip this check. */
+  readonly bypassable: boolean;
+  constructor(message: string, public readonly cause?: unknown, options: { bypassable?: boolean } = {}) {
     super(message);
     this.name = 'FaceError';
+    this.bypassable = options.bypassable ?? false;
   }
 }
