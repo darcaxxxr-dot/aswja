@@ -318,6 +318,19 @@ export class SyncService {
     const schoolId = getOrCreateSchoolId();
     const result: Record<string, number> = {};
 
+    // Ensure school record exists in IndexedDB so FK constraints in cloud are satisfied.
+    // Without this, academic_years/classes/students/face_profiles push will fail with 23503.
+    const existingSchool = await db.schools.get(schoolId);
+    if (!existingSchool) {
+      const ts = Date.now();
+      await db.schools.put({
+        id: schoolId,
+        name: 'Sekolah',
+        createdAt: ts,
+        updatedAt: ts
+      });
+    }
+
     // Build a studentId → schoolId lookup map for faceProfiles injection
     const allStudents = await db.students.toArray();
     const studentSchoolMap = new Map<string, string>(allStudents.map((s) => [s.id, s.schoolId]));
@@ -328,7 +341,8 @@ export class SyncService {
       // Filter rows that belong to this school
       let schoolRows: TableRowMap[TableKey][];
       if (t.local === 'schools') {
-        schoolRows = all;
+        // Force-include the current school record so it gets pushed first
+        schoolRows = all.filter((r) => (r as School).id === schoolId);
       } else if (t.local === 'faceProfiles') {
         schoolRows = all.filter((r) => {
           const fp = r as FaceProfile;
