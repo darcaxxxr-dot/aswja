@@ -151,57 +151,60 @@ create index idx_sync_queue_status on public.sync_queue(status);
 -- ============================================
 -- 4. RLS POLICIES
 -- ============================================
+-- Catatan: public.get_user_school() me-return uuid, jadi harus di-cast ke text.
+-- public.get_user_role() & is_superuser() return text/boolean (aman).
+
 create policy "schools_select_own"
   on public.schools for select to anon, authenticated
-  using (id = public.get_user_school());
+  using (id = public.get_user_school()::text);
 
 create policy "schools_admin_write"
   on public.schools for all to anon, authenticated
-  using (id = public.get_user_school() and (public.is_superuser() or public.get_user_role() = 'SUPERUSER'))
-  with check (id = public.get_user_school() and (public.is_superuser() or public.get_user_role() = 'SUPERUSER'));
+  using (id = public.get_user_school()::text and (public.is_superuser() or public.get_user_role() = 'SUPERUSER'))
+  with check (id = public.get_user_school()::text and (public.is_superuser() or public.get_user_role() = 'SUPERUSER'));
 
 create policy "academic_years_school_isolation"
   on public.academic_years for all to anon, authenticated
-  using (school_id = public.get_user_school())
-  with check (school_id = public.get_user_school());
+  using (school_id = public.get_user_school()::text)
+  with check (school_id = public.get_user_school()::text);
 
 create policy "classes_school_isolation"
   on public.classes for all to anon, authenticated
-  using (school_id = public.get_user_school())
-  with check (school_id = public.get_user_school());
+  using (school_id = public.get_user_school()::text)
+  with check (school_id = public.get_user_school()::text);
 
 create policy "students_school_isolation"
   on public.students for all to anon, authenticated
-  using (school_id = public.get_user_school())
-  with check (school_id = public.get_user_school());
+  using (school_id = public.get_user_school()::text)
+  with check (school_id = public.get_user_school()::text);
 
 create policy "face_profiles_school_isolation"
   on public.face_profiles for all to anon, authenticated
   using (
     student_id in (
-      select id from public.students where school_id = public.get_user_school()
+      select id from public.students where school_id = public.get_user_school()::text
     )
   )
   with check (
     student_id in (
-      select id from public.students where school_id = public.get_user_school()
+      select id from public.students where school_id = public.get_user_school()::text
     )
   );
 
 create policy "attendance_sessions_school_isolation"
   on public.attendance_sessions for all to anon, authenticated
-  using (school_id = public.get_user_school())
-  with check (school_id = public.get_user_school());
+  using (school_id = public.get_user_school()::text)
+  with check (school_id = public.get_user_school()::text);
 
 create policy "attendance_records_school_isolation"
   on public.attendance_records for all to anon, authenticated
-  using (school_id = public.get_user_school())
-  with check (school_id = public.get_user_school());
+  using (school_id = public.get_user_school()::text)
+  with check (school_id = public.get_user_school()::text);
 
 create policy "users_school_isolation"
   on public.users for all to anon, authenticated
-  using (school_id = public.get_user_school())
-  with check (school_id = public.get_user_school());
+  using (school_id = public.get_user_school()::text)
+  with check (school_id = public.get_user_school()::text);
 
 -- Settings: read-only untuk sync, write hanya untuk admin
 create policy "settings_read"
