@@ -55,11 +55,12 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
           </label>
         </div>
         <div class="camera-stage" id="stage" style="aspect-ratio:4/3;">
-          <div class="camera-placeholder">
-            <div style="font-size:32px;">🎥</div>
-            <div>Buka sesi & aktifkan kamera untuk mulai absensi.</div>
+          <div class="camera-placeholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;inset:0;text-align:center;padding:24px;">
+            <div style="font-size:48px;margin-bottom:12px;opacity:0.8;">🎥</div>
+            <div style="font-size:15px;line-height:1.5;max-width:320px;">Buka sesi &amp; aktifkan kamera untuk mulai absensi.</div>
           </div>
           <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
+          <div id="scan-feedback" style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:none;background:rgba(15,23,42,0.85);color:#fff;padding:14px 20px;border-radius:14px;text-align:center;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,0.35);min-width:260px;max-width:90%;"></div>
         </div>
         <div id="recog-info" class="muted" style="font-size:13px;">Recognition nonaktif.</div>
       </section>
@@ -121,6 +122,47 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     const ts = formatTime(Date.now());
     logEl.textContent = `[${ts}] ${msg}\n` + logEl.textContent;
   };
+
+  /** Tampilkan feedback box (sukses / duplikat / liveness) di atas-bawah frame kamera. */
+  const scanFeedbackEl = root.querySelector<HTMLDivElement>('#scan-feedback')!;
+  let scanFeedbackTimer: number | null = null;
+  const showScanFeedback = (
+    status: 'success' | 'duplicate' | 'liveness' | 'error',
+    title: string,
+    subtitle: string,
+    durationMs: number = 3000
+  ): void => {
+    if (scanFeedbackTimer) {
+      clearTimeout(scanFeedbackTimer);
+      scanFeedbackTimer = null;
+    }
+    const colorMap: Record<typeof status, { bg: string; border: string; icon: string }> = {
+      success:   { bg: 'rgba(16,185,129,0.18)',  border: '#10b981', icon: '✅' },
+      duplicate:  { bg: 'rgba(245,158,11,0.20)',  border: '#f59e0b', icon: '🔁' },
+      liveness:   { bg: 'rgba(239,68,68,0.20)',   border: '#ef4444', icon: '⚠️' },
+      error:      { bg: 'rgba(239,68,68,0.20)',   border: '#ef4444', icon: '✗' }
+    };
+    const c = colorMap[status];
+    scanFeedbackEl.style.display = 'block';
+    scanFeedbackEl.style.background = c.bg;
+    scanFeedbackEl.style.border = `2px solid ${c.border}`;
+    scanFeedbackEl.innerHTML =
+      `<div style="font-size:11px;color:#cbd5e1;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${c.icon} ${escapeFeedback(title)}</div>` +
+      `<div style="font-size:17px;font-weight:700;line-height:1.3;">${escapeFeedback(subtitle)}</div>`;
+    scanFeedbackTimer = window.setTimeout(() => {
+      scanFeedbackEl.style.display = 'none';
+      scanFeedbackTimer = null;
+    }, durationMs);
+  };
+  const hideScanFeedback = (): void => {
+    if (scanFeedbackTimer) {
+      clearTimeout(scanFeedbackTimer);
+      scanFeedbackTimer = null;
+    }
+    scanFeedbackEl.style.display = 'none';
+  };
+  const escapeFeedback = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c));
 
   const setCamButtons = (active: boolean) => {
     btnCam.disabled = active;
@@ -290,9 +332,14 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
         const { result, liveness } = await attendanceService.recognizeForSession(video, currentSession, config);
         if (!liveness.ok) {
           recogInfo.textContent = `Liveness gagal: ${liveness.reason}`;
+          showScanFeedback('liveness', 'Liveness Gagal', liveness.reason ?? 'coba lagi', 2000);
         }
         if (result) {
-          drawBox(result.detection.box, result.matched ? '#16a34a' : '#f59e0b', result.candidate ? `${result.candidate.label} ${result.candidate.score.toFixed(2)}` : 'UNKNOWN');
+          drawBox(
+            result.detection.box,
+            result.matched ? '#16a34a' : '#f59e0b',
+            result.candidate ? `${result.candidate.label} ${result.candidate.score.toFixed(2)}` : 'UNKNOWN'
+          );
           recogInfo.innerHTML = result.matched && result.candidate
             ? `Match: <strong>${result.candidate.label}</strong> (${result.candidate.score.toFixed(3)}) · ${result.durationMs.toFixed(0)}ms`
             : `No match · ${result.durationMs.toFixed(0)}ms`;
@@ -302,16 +349,46 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
             if (student) {
               if (student.classId !== currentSession!.classId) {
                 log(`⚠ ${student.name} bukan anggota kelas ini.`);
+                showScanFeedback('error', 'Kelas Tidak Cocok', `${student.name} bukan anggota kelas ini`, 2500);
               } else {
+                // Cek dulu apakah sudah absen
+                const existing = rows.find((r) => r.student.id === student.id)?.record;
                 try {
-                  const rec = await attendanceService.recordAttendance(currentSession.id, student.id, result.candidate.score);
-                  log(`✓ ${student.name} → ${rec.status} @ ${formatTime(rec.timestamp)}`);
+                  if (existing) {
+                    showScanFeedback(
+                      'duplicate',
+                      'Sudah Absen',
+                      `${student.name}, sudah melakukan absen (${existing.status})`,
+                      3000
+                    );
+                    log(`⚠ ${student.name} sudah absen (${existing.status}).`);
+                  } else {
+                    const rec = await attendanceService.recordAttendance(currentSession.id, student.id, result.candidate.score);
+                    showScanFeedback(
+                      'success',
+                      'Status Absen · Absen Berhasil',
+                      `${student.name} → ${rec.status}`,
+                      3000
+                    );
+                    log(`✓ ${student.name} → ${rec.status} @ ${formatTime(rec.timestamp)}`);
+                  }
                   await refreshTable();
+                  // Cooldown 3 detik: pause recognition supaya user bisa lihat feedback
+                  isRunning = false;
+                  recogInfo.textContent = '⏸ Cooldown 3 detik...';
+                  runRaf = window.setTimeout(() => {
+                    isRunning = true;
+                    recogInfo.textContent = 'Recognition loop berjalan...';
+                    runRaf = window.setTimeout(loop, 400);
+                  }, 3000);
+                  return;
                 } catch (err: unknown) {
                   const msg = err instanceof Error ? err.message : 'Unknown error';
                   if (msg.toLowerCase().includes('sudah')) {
+                    showScanFeedback('duplicate', 'Sudah Absen', `${student.name}, sudah melakukan absen`, 3000);
                     log(`⚠ ${student.name} sudah diabsen.`);
                   } else {
+                    showScanFeedback('error', 'Gagal', msg, 3000);
                     log(`ERROR record: ${msg}`);
                   }
                 }
@@ -336,6 +413,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
       clearTimeout(runRaf);
       runRaf = null;
     }
+    hideScanFeedback();
     btnRun.disabled = !cameraService.isActive() || !currentSession;
     btnPause.disabled = true;
     recogInfo.textContent = 'Recognition dihentikan.';
