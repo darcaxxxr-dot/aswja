@@ -29,9 +29,12 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
 
   // Resolve once shell + router are ready (NOT waiting for auth/sync which are lazy)
   return new Promise<void>((resolve) => {
+    console.info('[bootstrap] phase 1: init shell + router');
     // Critical: shell + router must be available immediately for navigation
     initDashboardAndShell(rootElement);
+    console.info('[bootstrap] shell initialized');
     router.init(rootElement, () => pageNotFound(rootElement));
+    console.info('[bootstrap] router initialized');
     initInstallPrompt();
     initOfflineIndicator();
 
@@ -41,11 +44,13 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
 
     // Defer this to next tick to let DOM settle first
     queueMicrotask(() => {
+      console.info('[bootstrap] phase 1 complete, dispatching app-ready');
       // Notify that app is fully booted — used by initial-splash in index.html
       window.dispatchEvent(new Event('app-ready'));
       resolve();
     });
   }).then((): void => {
+    console.info('[bootstrap] phase 2: lazy loading auth + sync');
     // Lazy-load auth + sync services after first paint to reduce main bundle blocking time
     void (async () => {
       try {
@@ -53,6 +58,7 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
           import('@services/auth/index'),
           import('@services/sync/index')
         ]);
+        console.info('[bootstrap] auth + sync loaded');
 
         authService.init();
         initSyncIndicator();
