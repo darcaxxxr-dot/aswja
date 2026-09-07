@@ -1,6 +1,6 @@
 import { APP_CONFIG, ROUTES } from '@config/app';
 import { router } from '@router/index';
-import { installPromptService } from '@services/pwa/index';
+import { installPromptService, getIosInstallInstructions } from '@services/pwa/index';
 import { syncService } from '@services/sync/index';
 import { authService, ROLE_LABELS, SUBROLE_LABELS, type AppUser } from '@services/auth/index';
 import { db } from '@services/database/index';
@@ -33,15 +33,14 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
   const nav = items
     .map(
       (it) =>
-        `<a href="${it.href}" data-link style="${activePath.startsWith(it.href) ? 'background:rgba(255,255,255,0.12);opacity:1;' : ''}">${it.label}</a>`
+        `<a href="${it.href}" data-link class="nav-link${activePath.startsWith(it.href) ? ' active' : ''}">${it.label}</a>`
     )
     .join('');
 
   const offlineBadge = `<span id="offline-badge" style="display:none;background:#dc2626;color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">OFFLINE</span>`;
   const syncBadge = `<span id="sync-badge" title="Klik untuk detail" style="background:rgba(255,255,255,0.12);color:#fff;padding:4px 10px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><span id="sync-dot" style="width:8px;height:8px;border-radius:50%;background:#94a3b8;"></span><span id="sync-label">Sync: —</span></span>`;
-  const idleBadge = `<span id="idle-badge" title="Sesi idle, auto-logout dalam 30 menit" style="background:rgba(255,255,255,0.06);color:#94a3b8;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">⏱ —</span>`;
   const userBadge = user
-    ? `<span id="user-badge" title="${user.email ?? ''} · ${ROLE_LABELS[user.role]}${user.subRole ? ' · ' + SUBROLE_LABELS[user.subRole] : ''}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;">${user.displayName} · ${ROLE_LABELS[user.role]}${user.subRole ? '/' + SUBROLE_LABELS[user.subRole] : ''}</span>`
+    ? `<span id="user-badge" title="${user.email ?? ''} · ${ROLE_LABELS[user.role]}${user.subRole ? ' · ' + SUBROLE_LABELS[user.subRole] : ''}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${user.displayName} · ${ROLE_LABELS[user.role]}${user.subRole ? '/' + SUBROLE_LABELS[user.subRole] : ''}</span>`
     : `<a id="user-badge" href="/login" data-link style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;text-decoration:none;">Login</a>`;
   const installBtn = `<button id="btn-install" class="btn" style="display:none;background:#16a34a;color:#fff;padding:6px 10px;min-height:32px;font-size:13px;">Install App</button>`;
 
@@ -58,9 +57,17 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
 
   return `
     <header class="app-header">
-      <h1>SmartFace Attendance</h1>
-      <nav class="app-nav">${nav}</nav>
-      <div class="row" style="margin-left:auto;">${offlineBadge}${syncBadge}${idleBadge}${userBadge}${installBtn}</div>
+      <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true" />
+      <div class="header-row">
+        <label for="nav-toggle" class="hamburger" aria-label="Buka menu">
+          <span></span><span></span><span></span>
+        </label>
+        <h1 class="app-title">SmartFace Attendance</h1>
+        <div class="header-right">
+          ${offlineBadge}${syncBadge}${userBadge}${installBtn}
+        </div>
+      </div>
+      <nav class="app-nav" id="app-nav">${nav}</nav>
     </header>
     <main class="app-main" id="page-root"></main>
     ${syncPanel}
@@ -79,13 +86,29 @@ export function initInstallPrompt(): void {
     btn.style.display = 'none';
     return;
   }
+
+  // Android/Chrome: standard install prompt
   installPromptService.onAvailable(() => {
     if (!installPromptService.isInstalled()) btn.style.display = 'inline-flex';
   });
   btn.addEventListener('click', async () => {
     const result = await installPromptService.promptInstall();
-    if (result === 'accepted') btn.style.display = 'none';
+    if (result === 'accepted') {
+      btn.style.display = 'none';
+    } else if (result === 'unavailable') {
+      // iOS: show manual instructions
+      const ios = getIosInstallInstructions();
+      if (ios.show) {
+        alert(ios.message);
+      }
+    }
   });
+
+  // iOS: button always visible (with iOS instructions on click)
+  if (getIosInstallInstructions().show) {
+    btn.style.display = 'inline-flex';
+    btn.textContent = 'Install App';
+  }
 }
 
 export function initOfflineIndicator(): void {

@@ -235,28 +235,28 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
       return;
     }
     tableEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 100px 140px 180px;gap:8px;font-size:13px;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--color-border);">
+      <div class="student-table-header">
         <div>Nama</div><div>NIS</div><div>Status</div><div>Aksi</div>
       </div>
       ${rows
         .map(
           ({ student, record }) => `
-        <div style="display:grid;grid-template-columns:1fr 100px 140px 180px;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--color-border);font-size:14px;">
+        <div class="student-table-row">
           <div>
             <strong>${student.name}</strong>
-            ${record ? `<div class="muted" style="font-size:11px;">${formatTime(record.timestamp)} · conf=${record.confidence.toFixed(2)}</div>` : '<div class="muted" style="font-size:11px;">—</div>'}
+            ${record ? `<div class="muted student-table-meta">${formatTime(record.timestamp)} · conf=${record.confidence.toFixed(2)}</div>` : '<div class="muted student-table-meta">—</div>'}
           </div>
-          <div class="muted" style="font-size:13px;">${student.nis}</div>
+          <div class="muted student-table-nis">${student.nis}</div>
           <div>
-            <select data-status="${student.id}" ${record ? '' : ''} style="padding:6px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;width:100%;">
+            <select data-status="${student.id}" ${record ? '' : ''} class="student-table-select">
               ${record ? `<option value="${record.status}">${record.status}</option>` : '<option value="">— belum —</option>'}
               ${STATUS_OPTIONS.filter((s) => s !== (record?.status ?? '')).map((s) => `<option value="${s}">${s}</option>`).join('')}
             </select>
           </div>
-          <div class="row" style="gap:4px;">
+          <div class="row student-table-actions">
             ${record
-              ? `<button class="btn btn-danger" data-del-record="${record.id}" style="padding:4px 8px;min-height:32px;font-size:12px;">Batal</button>`
-              : `<button class="btn btn-ghost" data-manual="${student.id}" style="padding:4px 8px;min-height:32px;font-size:12px;">Manual</button>`
+              ? `<button class="btn btn-danger" data-del-record="${record.id}">Batal</button>`
+              : `<button class="btn btn-ghost" data-manual="${student.id}">Manual</button>`
             }
           </div>
         </div>`
@@ -440,6 +440,8 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
       return;
     }
     try {
+      btnOpen.classList.add('is-loading');
+      btnOpen.disabled = true;
       const session = await attendanceService.openSession(classId, 'admin');
       currentSession = session;
       currentClass = classes.find((c) => c.id === classId) ?? null;
@@ -449,6 +451,9 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log(`ERROR buka sesi: ${msg}`);
+    } finally {
+      btnOpen.classList.remove('is-loading');
+      btnOpen.disabled = false;
     }
   });
 
@@ -508,6 +513,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
 
   btnLoad.addEventListener('click', async () => {
     try {
+      btnLoad.classList.add('is-loading');
       btnLoad.disabled = true;
       log('Memuat model...');
       await faceModelLoader.load();
@@ -515,6 +521,8 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     } catch (err: unknown) {
       const msg = err instanceof FaceError ? err.message : (err as Error).message;
       log(`ERROR load model: ${msg}`);
+    } finally {
+      btnLoad.classList.remove('is-loading');
       btnLoad.disabled = false;
     }
   });
@@ -528,6 +536,8 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
 
   btnCfgSave.addEventListener('click', async () => {
     try {
+      btnCfgSave.classList.add('is-loading');
+      btnCfgSave.disabled = true;
       await attendanceConfigService.save({
         onTimeUntil: cfgOntime.value,
         lateAfter: cfgLate.value,
@@ -539,6 +549,9 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log(`ERROR save config: ${msg}`);
+    } finally {
+      btnCfgSave.classList.remove('is-loading');
+      btnCfgSave.disabled = false;
     }
   });
 

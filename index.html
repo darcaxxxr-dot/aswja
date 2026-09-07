@@ -5,20 +5,51 @@
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0ea5e9" />
     <meta name="description" content="ASWJA - Absensi Sholat Wajib Berjamaah MAN IC Kota Palangkaraya" />
+    <meta name="format-detection" content="telephone=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ASWJA" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>ASWJA - Absensi Sholat Wajib Berjamaah</title>
+    <!-- iOS Splash Screens — pastikan file ada di /public/icons/ -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" href="/icons/splash-iphone-15-pro.png" />
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" href="/icons/splash-iphone-14.png" />
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" href="/icons/splash-iphone-14-plus.png" />
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" href="/icons/splash-iphone-x.png" />
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" href="/icons/splash-iphone-11.png" />
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)" href="/icons/splash-ipad.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="app"></div>
+    <!-- Loading splash shown until JS bundle loads (PWA offline case) -->
+    <div id="initial-splash" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#064e3b 0%,#0a7d56 50%,#10b981 100%);color:#fff;font-family:'Outfit',sans-serif;z-index:9999;">
+      <div style="font-size:72px;margin-bottom:16px;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.3));">🕌</div>
+      <h1 style="margin:0;font-size:28px;font-weight:800;letter-spacing:-0.02em;text-shadow:0 2px 8px rgba(0,0,0,0.3);">ASWJA</h1>
+      <p style="margin:8px 0 0;font-size:14px;opacity:0.9;">Memuat aplikasi...</p>
+      <div style="margin-top:24px;width:48px;height:48px;border:3px solid rgba(255,255,255,0.2);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;"></div>
+    </div>
+    <style>
+      @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      #initial-splash.hidden { display: none; }
+    </style>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      // Hide splash once app boots
+      window.addEventListener('app-ready', () => {
+        const s = document.getElementById('initial-splash');
+        if (s) s.classList.add('hidden');
+      });
+      // Safety: auto-hide after 5s
+      setTimeout(() => {
+        const s = document.getElementById('initial-splash');
+        if (s) s.classList.add('hidden');
+      }, 5000);
+    </script>
   </body>
 </html>

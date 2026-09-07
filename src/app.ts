@@ -85,4 +85,7 @@ export function bootstrap(rootElement: HTMLElement): void {
   if (window.location.pathname === '/' || window.location.pathname === '') {
     window.history.replaceState({}, '', '/login');
   }
+
+  // Notify that app is fully booted — used by initial-splash in index.html
+  window.dispatchEvent(new Event('app-ready'));
 }

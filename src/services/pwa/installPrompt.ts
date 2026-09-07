@@ -6,6 +6,34 @@ interface BeforeInstallPromptEvent extends Event {
 
 type Listener = (event: BeforeInstallPromptEvent) => void;
 
+export function isIosDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+export function isInStandaloneMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  // iOS uses navigator.standalone
+  const nav = navigator as Navigator & { standalone?: boolean };
+  if (nav.standalone === true) return true;
+  return window.matchMedia('(display-mode: standalone)').matches;
+}
+
+export function getIosInstallInstructions(): {
+  show: boolean;
+  message: string;
+} {
+  return {
+    show: isIosDevice() && !isInStandaloneMode(),
+    message:
+      'Untuk meng-install aplikasi ini di iPhone/iPad:\n' +
+      '1. Ketuk tombol Share (⬆) di Safari\n' +
+      '2. Gulir ke bawah dan pilih "Add to Home Screen"\n' +
+      '3. Ketuk "Add" untuk mengkonfirmasi'
+  };
+}
+
 class InstallPromptService {
   private deferred: BeforeInstallPromptEvent | null = null;
   private listeners: Listener[] = [];
@@ -28,7 +56,7 @@ class InstallPromptService {
   }
 
   isInstalled(): boolean {
-    return this.installed || window.matchMedia('(display-mode: standalone)').matches;
+    return this.installed || isInStandaloneMode();
   }
 
   onAvailable(listener: Listener): () => void {

@@ -1,1 +1,1 @@
-export { installPromptService } from './installPrompt';
+export { installPromptService, isIosDevice, isInStandaloneMode, getIosInstallInstructions } from './installPrompt';
