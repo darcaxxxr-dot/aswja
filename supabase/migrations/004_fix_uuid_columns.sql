@@ -8,29 +8,43 @@
 -- FK tidak di-recreate karena app menggunakan cascade delete di level aplikasi.
 
 -- ============================================
--- 1. DROP ALL FK CONSTRAINTS & POLICIES
+-- 1. DROP ALL FK CONSTRAINTS & POLICIES DULU
 -- ============================================
+-- Schools
 alter table public.schools drop constraint if exists "schools_school_id_fkey";
 
+-- Academic Years
 alter table public.academic_years drop constraint if exists "academic_years_school_id_fkey";
 
+-- Classes
 alter table public.classes drop constraint if exists "classes_school_id_fkey";
 alter table public.classes drop constraint if exists "classes_academic_year_id_fkey";
 
+-- Students
 alter table public.students drop constraint if exists "students_school_id_fkey";
 alter table public.students drop constraint if exists "students_class_id_fkey";
 
+-- Face Profiles
 alter table public.face_profiles drop constraint if exists "face_profiles_student_id_fkey";
 
+-- Attendance Sessions
 alter table public.attendance_sessions drop constraint if exists "attendance_sessions_school_id_fkey";
 alter table public.attendance_sessions drop constraint if exists "attendance_sessions_class_id_fkey";
 
+-- Attendance Records
 alter table public.attendance_records drop constraint if exists "attendance_records_school_id_fkey";
 alter table public.attendance_records drop constraint if exists "attendance_records_session_id_fkey";
 alter table public.attendance_records drop constraint if exists "attendance_records_student_id_fkey";
 
-alter table public.users drop constraint if exists "users_school_id_fkey";
+-- Users (table may not exist yet)
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'users') then
+    alter table public.users drop constraint if exists "users_school_id_fkey";
+  end if;
+end$$;
 
+-- Drop policies
 drop policy if exists "schools_select_own" on public.schools;
 drop policy if exists "schools_admin_write" on public.schools;
 drop policy if exists "academic_years_school_isolation" on public.academic_years;
@@ -69,8 +83,14 @@ alter table public.attendance_records alter column school_id type text using sch
 alter table public.attendance_records alter column session_id type text using session_id::text;
 alter table public.attendance_records alter column student_id type text using student_id::text;
 
-alter table public.users alter column id type text using id::text;
-alter table public.users alter column school_id type text using school_id::text;
+-- Users (table may not exist yet)
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'users') then
+    alter table public.users alter column id type text using id::text;
+    alter table public.users alter column school_id type text using school_id::text;
+  end if;
+end$$;
 
 -- ============================================
 -- 3. REBUILD RLS POLICIES
