@@ -51,6 +51,14 @@ class AuthService {
   private listeners: Array<(user: AppUser | null) => void> = [];
   private idleTimer: number | null = null;
   private booted = false;
+  /**
+   * Tracks whether the initial getSession() check has completed.
+   * While false, listeners receive null (initial state) but should not
+   * treat it as a sign-out event. Once true, listeners receive real updates.
+   */
+  private initialSessionResolved = false;
+  /** Pending promise of the initial getSession check, for listeners to await. */
+  private initialSessionPromise: Promise<void> | null = null;
 
   init(): void {
     if (this.booted) return;
@@ -61,21 +69,26 @@ class AuthService {
     const client = getSupabaseClient();
     if (!client) {
       console.warn('[auth] Supabase client not configured, auth disabled.');
+      this.initialSessionResolved = true;
       return;
     }
 
     this.touchActivity();
     this.startIdleCheck();
 
-    void client.auth.getSession().then(async ({ data }) => {
+    this.initialSessionPromise = client.auth.getSession().then(async ({ data }) => {
       this.currentSession = data.session;
       this.currentUser = data.session ? mapToAppUser(data.session.user) : null;
+      this.initialSessionResolved = true;
       await this.emit();
-    }).catch(() => undefined);
+    }).catch(() => {
+      this.initialSessionResolved = true;
+    });
 
     client.auth.onAuthStateChange((_event, session) => {
       this.currentSession = session;
       this.currentUser = session ? mapToAppUser(session.user) : null;
+      this.initialSessionResolved = true;
       if (session) this.touchActivity();
       void this.emit();
     });
@@ -200,10 +213,26 @@ class AuthService {
 
   onAuthStateChange(listener: (user: AppUser | null) => void): () => void {
     this.listeners.push(listener);
-    void this.getCurrentUser().then((u) => listener(u));
+    // If the initial getSession() check is still in-flight, wait for it before
+    // firing the listener. This prevents a race where the listener sees
+    // `currentUser = null` and treats it as a sign-out event before the
+    // session is restored from local storage.
+    const fire = () => {
+      void this.getCurrentUser().then((u) => listener(u));
+    };
+    if (this.initialSessionPromise && !this.initialSessionResolved) {
+      void this.initialSessionPromise.then(fire);
+    } else {
+      fire();
+    }
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
     };
+  }
+
+  /** True once the initial getSession() check has finished (or auth is disabled). */
+  isInitialSessionResolved(): boolean {
+    return this.initialSessionResolved;
   }
 
   private async emit(): Promise<void> {

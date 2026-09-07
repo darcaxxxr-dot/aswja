@@ -63,7 +63,15 @@ export function bootstrap(rootElement: HTMLElement): void {
   // Start auto-sync immediately on boot (doesn't require login)
   void startAutoSyncOnce();
 
-  authService.onAuthStateChange((user) => {
+  authService.onAuthStateChange(async (user) => {
+    // Wait for the initial getSession() check to complete before redirecting.
+    // Otherwise we may see `user = null` during the brief window before the
+    // session is restored from Supabase local storage, and mistakenly redirect
+    // the user back to /login.
+    if (!authService.isInitialSessionResolved()) {
+      // The listener will be re-invoked once the initial session resolves.
+      return;
+    }
     const path = window.location.pathname;
     if (!user && isProtectedPath(path)) {
       window.history.replaceState({}, '', '/login');
