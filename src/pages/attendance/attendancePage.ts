@@ -55,12 +55,12 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
           </label>
         </div>
         <div class="camera-stage" id="stage" style="aspect-ratio:4/3;">
-          <div class="camera-placeholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;inset:0;text-align:center;padding:24px;">
+          <div id="camera-placeholder" class="camera-placeholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;inset:0;text-align:center;padding:24px;background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);color:#cbd5e1;z-index:1;">
             <div style="font-size:48px;margin-bottom:12px;opacity:0.8;">🎥</div>
             <div style="font-size:15px;line-height:1.5;max-width:320px;">Buka sesi &amp; aktifkan kamera untuk mulai absensi.</div>
           </div>
-          <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
-          <div id="scan-feedback" style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:none;background:rgba(15,23,42,0.85);color:#fff;padding:14px 20px;border-radius:14px;text-align:center;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,0.35);min-width:260px;max-width:90%;"></div>
+          <canvas id="overlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;"></canvas>
+          <div id="scan-feedback" style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:none;background:rgba(15,23,42,0.85);color:#fff;padding:14px 20px;border-radius:14px;text-align:center;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,0.35);min-width:260px;max-width:90%;z-index:3;"></div>
         </div>
         <div id="recog-info" class="muted" style="font-size:13px;">Recognition nonaktif.</div>
       </section>
@@ -116,7 +116,21 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
   const logEl = root.querySelector<HTMLPreElement>('#log')!;
 
   const video = document.createElement('video');
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.style.position = 'absolute';
+  video.style.inset = '0';
+  video.style.width = '100%';
+  video.style.height = '100%';
+  video.style.objectFit = 'cover';
+  video.style.zIndex = '0';
+  video.style.background = '#000';
   stage.insertBefore(video, overlay);
+
+  const placeholder = root.querySelector<HTMLDivElement>('#camera-placeholder')!;
+  const hidePlaceholder = () => { placeholder.style.display = 'none'; };
+  const showPlaceholder = () => { placeholder.style.display = 'flex'; };
 
   const log = (msg: string) => {
     const ts = formatTime(Date.now());
@@ -455,12 +469,17 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
 
   btnCam.addEventListener('click', async () => {
     try {
+      btnCam.disabled = true;
+      log('Meminta izin kamera...');
       await cameraService.start(video);
+      hidePlaceholder();
       log('Kamera aktif.');
       setCamButtons(true);
     } catch (err: unknown) {
       const msg = err instanceof CameraError ? err.message : (err as Error).message;
       log(`ERROR kamera: ${msg}`);
+      showPlaceholder();
+      btnCam.disabled = false;
     }
   });
 
@@ -478,8 +497,13 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     stopLoop();
     await cameraService.stop();
     clearOverlay();
-    log('Kamera dihentikan.');
-    setCamButtons(false);
+    showPlaceholder();
+    btnCam.disabled = false;
+    btnSwitch.disabled = true;
+    btnStop.disabled = true;
+    btnRun.disabled = true;
+    btnPause.disabled = true;
+    log('Kamera dimatikan.');
   });
 
   btnLoad.addEventListener('click', async () => {
