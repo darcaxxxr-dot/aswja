@@ -160,7 +160,7 @@ export async function cloudUpsert<T extends CloudRow>(
 
     const { data, error } = await client.from(table).upsert(filteredBatch, { onConflict: 'id' }).select('id');
     if (error) {
-      errors.push(`Batch ${i}-${i + batch.length}: ${error.message}`);
+      errors.push(`Batch ${i}-${i + batch.length}: ${error.message} (code=${error.code ?? 'unknown'})`);
     } else {
       inserted += data?.length ?? 0;
     }
@@ -182,6 +182,12 @@ export async function cloudSelect<T = CloudRow>(
   let q;
   if (table === 'schools') {
     q = client.from(table).select('*').eq('id', schoolId);
+  } else if (table === 'face_profiles') {
+    // face_profiles tidak punya school_id; join via students
+    q = client
+      .from(table)
+      .select('*, students!inner(school_id)')
+      .eq('students.school_id', schoolId);
   } else {
     q = client.from(table).select('*').eq('school_id', schoolId);
   }
@@ -189,5 +195,12 @@ export async function cloudSelect<T = CloudRow>(
   if (sinceIso) q = q.gt('updated_at', sinceIso);
   const { data, error } = await q;
   if (error) return { data: [], error: error.message };
-  return { data: (data as T[]) ?? [] };
+  // Strip the joined students object from result rows
+  const rows = (data as unknown as Record<string, unknown>[]) ?? [];
+  const cleaned = rows.map((r) => {
+    const { students: _omit, ...rest } = r as Record<string, unknown>;
+    void _omit;
+    return rest as unknown as T;
+  });
+  return { data: cleaned };
 }

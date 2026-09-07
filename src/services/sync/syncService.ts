@@ -69,9 +69,10 @@ function getCloudColumns(table: TableKey): string[] {
     case 'classes':
       return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at'];
     case 'students':
-      return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at'];
+      return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at', 'updated_at'];
     case 'faceProfiles':
-      return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at'];
+      // face_profiles TIDAK punya school_id di cloud
+      return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at'];
     case 'attendanceSessions':
       return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'created_by', 'created_at'];
     case 'attendanceRecords':
@@ -345,11 +346,7 @@ export class SyncService {
       // Konversi ke cloud rows
       const cloudRows = schoolRows.map((r) => {
         const row = toCloudRow(t.local, r);
-        // Inject school_id into face_profiles cloud row
-        if (t.local === 'faceProfiles') {
-          const fp = r as FaceProfile;
-          row.school_id = studentSchoolMap.get(fp.studentId) ?? schoolId;
-        }
+        // face_profiles tidak punya kolom school_id di cloud (resolved via student_id)
         return row;
       });
 
@@ -360,6 +357,10 @@ export class SyncService {
         const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
         if (errors.length > 0) {
           console.warn(`[sync] Push ${t.cloud} errors:`, errors);
+          // Log first row sample for debugging
+          if (cloudRows.length > 0) {
+            console.warn(`[sync] First row sample:`, JSON.stringify(cloudRows[0]));
+          }
         }
         result[t.cloud] = inserted;
       } catch (err: unknown) {
