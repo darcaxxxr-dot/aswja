@@ -67,12 +67,8 @@ export default defineConfig({
         'icons/apple-touch-icon.png',
         'icons/favicon-32.png',
         'models/tiny_face_detector_model-weights_manifest.json',
-        'models/tiny_face_detector_model-shard1',
         'models/face_landmark_68_model-weights_manifest.json',
-        'models/face_landmark_68_model-shard1',
-        'models/face_recognition_model-weights_manifest.json',
-        'models/face_recognition_model-shard1',
-        'models/face_recognition_model-shard2'
+        'models/face_recognition_model-weights_manifest.json'
       ],
       manifest: {
         name: 'ASWJA - Absensi Sholat Wajib Berjamaah',
@@ -114,21 +110,33 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,json,bin}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,webmanifest}'],
         navigateFallback: '/index.html',
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
         runtimeCaching: [
           {
-            urlPattern: /\/models\/.+/,
-            handler: 'CacheFirst',
+            // Model manifest JSON — StaleWhileRevalidate agar offline masih bisa
+            urlPattern: /\/models\/.+\.json$/,
+            handler: 'StaleWhileRevalidate',
             options: {
-              cacheName: 'smartface-models',
-              expiration: {
-                maxEntries: 32,
-                maxAgeSeconds: 60 * 60 * 24 * 365
-              },
+              cacheName: 'smartface-models-manifest',
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          {
+            // Model binary shards (.bin) — NetworkFirst dengan cache fallback.
+            // NetworkFirst memastikan kita selalu cek versi terbaru dari CDN;
+            // kalau offline, fallback ke cache. TIDAK CacheFirst agar saat model
+            // di-update di server, device langsung dapat versi baru tanpa stale data.
+            urlPattern: /\/models\/.+\.bin$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'smartface-models-binary',
+              networkTimeoutSeconds: 10,
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] }
             }
           },
