@@ -276,6 +276,10 @@ export function initSyncIndicator(): void {
         <button id="btn-pull-only" class="btn" style="flex:1;background:rgba(255,255,255,0.12);color:#fff;padding:6px 8px;font-size:12px;min-height:32px;">⬇ Pull Only</button>
       </div>
       <div style="display:flex;gap:6px;margin-top:6px;">
+        <button id="btn-show-qr" class="btn" style="flex:1;background:rgba(14,165,233,0.18);color:#7dd3fc;border:1px solid rgba(14,165,233,0.35);padding:6px 8px;font-size:12px;min-height:32px;">📱 Tampilkan QR</button>
+        <button id="btn-scan-qr" class="btn" style="flex:1;background:rgba(168,85,247,0.18);color:#c4b5fd;border:1px solid rgba(168,85,247,0.35);padding:6px 8px;font-size:12px;min-height:32px;">📷 Pindai QR</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
         <button id="btn-reset-local" class="btn" style="flex:1;background:rgba(220,38,38,0.15);color:#fca5a5;border:1px solid rgba(220,38,38,0.3);padding:6px 8px;font-size:12px;min-height:32px;">🗑 Reset Local Data</button>
       </div>
       <div id="sync-panel-log" style="margin-top:10px;max-height:120px;overflow:auto;font-size:10px;font-family:monospace;color:#94a3b8;background:rgba(0,0,0,0.3);border-radius:6px;padding:6px;display:none;"></div>
@@ -285,6 +289,8 @@ export function initSyncIndicator(): void {
     const btnPull = document.getElementById('btn-pull-only');
     const btnCopy = document.getElementById('btn-copy-schoolid');
     const btnLink = document.getElementById('btn-link-school');
+    const btnShowQr = document.getElementById('btn-show-qr');
+    const btnScanQr = document.getElementById('btn-scan-qr');
     const btnReset = document.getElementById('btn-reset-local');
     const inputSchool = document.getElementById('input-schoolid') as HTMLInputElement | null;
     const logEl = document.getElementById('sync-panel-log');
@@ -345,6 +351,13 @@ export function initSyncIndicator(): void {
       } catch (e) {
         appendLog(`Gagal link: ${e instanceof Error ? e.message : String(e)}`);
       }
+    });
+
+    btnShowQr?.addEventListener('click', () => {
+      void showQrModal();
+    });
+    btnScanQr?.addEventListener('click', () => {
+      void showScanModal();
     });
 
     btnReset?.addEventListener('click', async () => {
@@ -527,6 +540,173 @@ export function initSyncIndicator(): void {
       void renderPanel(cur);
     }
   }, 5000);
+}
+
+/* =============================================================
+   QR DEVICE LINKING — Modals
+   ============================================================= */
+
+function ensureQrModalContainer(): HTMLDivElement {
+  let el = document.getElementById('qr-modal-root') as HTMLDivElement | null;
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'qr-modal-root';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function closeQrModal() {
+  const el = document.getElementById('qr-modal-root');
+  if (el) el.innerHTML = '';
+}
+
+async function showQrModal() {
+  const root = ensureQrModalContainer();
+  root.innerHTML = `
+    <div style="position:fixed;inset:0;background:rgba(15,23,42,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(6px);">
+      <div style="background:#fff;color:#0f172a;border-radius:16px;padding:24px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);text-align:center;position:relative;">
+        <button id="qr-close" style="position:absolute;top:8px;right:8px;background:transparent;border:none;font-size:24px;cursor:pointer;color:#64748b;line-height:1;padding:4px 8px;">&times;</button>
+        <div style="font-size:14px;color:#64748b;margin-bottom:6px;">📱 TAMPILKAN QR UNTUK LINKING</div>
+        <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Pindai dari device baru</h3>
+        <div id="qr-canvas-wrap" style="display:flex;justify-content:center;padding:8px;background:#f1f5f9;border-radius:12px;min-height:240px;align-items:center;">
+          <div style="color:#64748b;font-size:13px;">Membuat QR...</div>
+        </div>
+        <div id="qr-info" style="margin-top:12px;font-size:12px;color:#475569;line-height:1.5;"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('qr-close')?.addEventListener('click', closeQrModal);
+
+  // Lazy import QR service
+  const { buildPayload, generateQrSvg } = await import('@services/sync/qrLinkingService');
+  const { getOrCreateDeviceId } = await import('@utils/device');
+  const payload = buildPayload({});
+  if (!payload) {
+    const wrap = document.getElementById('qr-canvas-wrap');
+    if (wrap) wrap.innerHTML = '<div style="color:#dc2626;font-size:12px;">Supabase belum dikonfigurasi. Buka Settings untuk mengatur.</div>';
+    return;
+  }
+  payload.from = getOrCreateDeviceId();
+
+  const svg = await generateQrSvg(payload);
+  const wrap = document.getElementById('qr-canvas-wrap');
+  if (wrap) {
+    wrap.innerHTML = svg;
+    const svgEl = wrap.querySelector('svg');
+    if (svgEl) {
+      svgEl.style.maxWidth = '280px';
+      svgEl.style.maxHeight = '280px';
+      svgEl.style.height = 'auto';
+      svgEl.style.width = '100%';
+    }
+  }
+
+  const info = document.getElementById('qr-info');
+  if (info) {
+    const expiresAt = new Date(payload.ts + 5 * 60 * 1000);
+    info.innerHTML =
+      `<div><strong>School ID:</strong> <code style="font-size:11px;">${payload.schoolId.substring(0, 8)}...</code></div>` +
+      `<div style="margin-top:4px;">QR berlaku sampai <strong>${expiresAt.toLocaleTimeString('id-ID')}</strong> (5 menit)</div>` +
+      `<div style="margin-top:4px;color:#94a3b8;font-size:11px;">Device pemindai akan otomatis sync data.</div>`;
+  }
+}
+
+async function showScanModal() {
+  const root = ensureQrModalContainer();
+  root.innerHTML = `
+    <div style="position:fixed;inset:0;background:rgba(15,23,42,0.92);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(6px);">
+      <div style="background:#fff;color:#0f172a;border-radius:16px;padding:20px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);position:relative;">
+        <button id="qr-close" style="position:absolute;top:8px;right:8px;background:transparent;border:none;font-size:24px;cursor:pointer;color:#64748b;line-height:1;padding:4px 8px;">&times;</button>
+        <div style="font-size:14px;color:#64748b;margin-bottom:6px;">📷 PINDAI QR</div>
+        <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Arahkan kamera ke QR device lain</h3>
+        <div id="qr-scanner-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3;">
+          <div id="qr-scanner-el" style="width:100%;height:100%;"></div>
+          <div id="qr-scanner-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.7);font-size:13px;background:rgba(0,0,0,0.4);">Meminta izin kamera...</div>
+        </div>
+        <div id="qr-scan-info" style="margin-top:10px;font-size:12px;color:#475569;line-height:1.5;text-align:center;">Posisikan QR di tengah frame</div>
+        <div id="qr-scan-error" style="margin-top:6px;font-size:12px;color:#dc2626;line-height:1.4;text-align:center;display:none;"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('qr-close')?.addEventListener('click', async () => {
+    await scanHandle?.stop();
+    closeQrModal();
+  });
+
+  const scanEl = document.getElementById('qr-scanner-el');
+  if (!scanEl) return;
+  // Convert div to video for camera stream
+  scanEl.id = 'qr-scan-video-target';
+  const video = document.createElement('video');
+  video.id = 'qr-scan-video-target';
+  video.setAttribute('playsinline', 'true');
+  video.muted = true;
+  video.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+  scanEl.replaceWith(video);
+
+  const { startScanning, decodePayload, applyPayload } = await import('@services/sync/qrLinkingService');
+  let scanHandle: { stop: () => Promise<void> } | null = null;
+    let handled = false;
+
+  try {
+    scanHandle = await startScanning(video, {
+      onResult: (text: string) => {
+        if (handled) return;
+        const payload = decodePayload(text);
+        if (!payload) {
+          const errEl = document.getElementById('qr-scan-error');
+          if (errEl) {
+            errEl.textContent = 'QR tidak valid atau bukan format device linking.';
+            errEl.style.display = 'block';
+          }
+          return;
+        }
+        handled = true;
+        const result = applyPayload(payload);
+        const info = document.getElementById('qr-scan-info');
+        const errEl = document.getElementById('qr-scan-error');
+        if (result.ok) {
+          if (info) {
+            info.style.color = '#16a34a';
+            info.innerHTML = `<strong>✓ ${result.message}</strong><br><br>Memuat ulang dalam 2 detik...`;
+          }
+          void scanHandle?.stop();
+          setTimeout(() => window.location.reload(), 2000);
+        } else {
+          if (errEl) {
+            errEl.textContent = result.message;
+            errEl.style.display = 'block';
+          }
+          handled = false; // allow re-scan
+        }
+      },
+      onError: (err: Error) => {
+        const errEl = document.getElementById('qr-scan-error');
+        if (errEl) {
+          errEl.textContent = `Error kamera: ${err.message}. Pastikan browser diizinkan akses kamera.`;
+          errEl.style.display = 'block';
+        }
+        const overlay = document.getElementById('qr-scanner-overlay');
+        if (overlay) {
+          overlay.textContent = 'Kamera gagal diakses. Pastikan browser diizinkan akses kamera.';
+          overlay.style.background = 'rgba(220,38,38,0.6)';
+        }
+      }
+    });
+    // Hide loading overlay once scanner is up
+    setTimeout(() => {
+      const overlay = document.getElementById('qr-scanner-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }, 500);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const errEl = document.getElementById('qr-scan-error');
+    if (errEl) {
+      errEl.textContent = `Gagal memulai scanner: ${msg}`;
+      errEl.style.display = 'block';
+    }
+  }
 }
 
 export function renderPlaceholder(root: HTMLElement, title: string): void {
