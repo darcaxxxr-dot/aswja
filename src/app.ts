@@ -1,10 +1,8 @@
 import './styles/global.css';
 import { router } from '@router/index';
-import { initDashboardAndShell, pageNotFound, initInstallPrompt, initOfflineIndicator, initSyncIndicator, initIdleIndicator } from '@pages/dashboard/shell';
+import { initDashboardAndShell, pageNotFound, initInstallPrompt, initOfflineIndicator, initSyncIndicator } from '@pages/dashboard/shell';
 import { getOrCreateDeviceId, getOrCreateSchoolId } from '@utils/device';
 import { databaseService } from '@services/database/index';
-import { syncService } from '@services/sync/index';
-import { authService } from '@services/auth/index';
 import { BRAND } from '@config/brand';
 
 const PROTECTED_PATHS = ['/dashboard', '/students', '/enrollment', '/classes', '/attendance', '/reports', '/settings', '/supabase-test', '/face-test', '/db-test', '/camera-test'];
@@ -23,64 +21,62 @@ export function bootstrap(rootElement: HTMLElement): void {
   const schoolId = getOrCreateSchoolId();
   console.info(`[bootstrap] device=${deviceId} school=${schoolId}`);
 
+  // Critical: open DB immediately (fast, required for app)
   void databaseService.open().catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[bootstrap] DB open failed: ${msg}`);
   });
 
-  authService.init();
+  // Lazy-load auth + sync services after first paint to reduce main bundle blocking time
+  void (async () => {
+    try {
+      const [{ authService }, { syncService }] = await Promise.all([
+        import('@services/auth/index'),
+        import('@services/sync/index')
+      ]);
 
+      authService.init();
+      initSyncIndicator();
+
+      // Start auto-sync on app boot
+      try {
+        await syncService.startAutoSync(30000);
+        console.info('[bootstrap] Auto-sync started (30s interval)');
+      } catch (err: unknown) {
+        console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      // Initial pull from Supabase on startup if online
+      if (navigator.onLine) {
+        try {
+          await syncService.runFullSync();
+          console.info('[bootstrap] Initial sync completed');
+        } catch (err: unknown) {
+          console.warn(`[bootstrap] initial sync failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      authService.onAuthStateChange(async (user) => {
+        if (!authService.isInitialSessionResolved()) return;
+        const path = window.location.pathname;
+        if (!user && isProtectedPath(path)) {
+          window.history.replaceState({}, '', '/login');
+          router.navigate('/login');
+        } else if (user && (path === '/login' || path === '/')) {
+          window.history.replaceState({}, '', '/dashboard');
+          router.navigate('/dashboard');
+        }
+      });
+    } catch (err: unknown) {
+      console.error(`[bootstrap] critical services load failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  })();
+
+  // Critical: shell + router must be available immediately for navigation
   initDashboardAndShell(rootElement);
   router.init(rootElement, () => pageNotFound(rootElement));
-
   initInstallPrompt();
   initOfflineIndicator();
-  initIdleIndicator();
-  initSyncIndicator();
-
-  // Start auto-sync on app boot (not just on login)
-  let autoSyncStarted = false;
-  const startAutoSyncOnce = async () => {
-    if (autoSyncStarted) return;
-    autoSyncStarted = true;
-    try {
-      await syncService.startAutoSync(30000);
-      console.info('[bootstrap] Auto-sync started (30s interval)');
-    } catch (err: unknown) {
-      console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    // Also do an initial pull from Supabase on startup if online
-    if (navigator.onLine) {
-      try {
-        await syncService.runFullSync();
-        console.info('[bootstrap] Initial sync completed');
-      } catch (err: unknown) {
-        console.warn(`[bootstrap] initial sync failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-  };
-
-  // Start auto-sync immediately on boot (doesn't require login)
-  void startAutoSyncOnce();
-
-  authService.onAuthStateChange(async (user) => {
-    // Wait for the initial getSession() check to complete before redirecting.
-    // Otherwise we may see `user = null` during the brief window before the
-    // session is restored from Supabase local storage, and mistakenly redirect
-    // the user back to /login.
-    if (!authService.isInitialSessionResolved()) {
-      // The listener will be re-invoked once the initial session resolves.
-      return;
-    }
-    const path = window.location.pathname;
-    if (!user && isProtectedPath(path)) {
-      window.history.replaceState({}, '', '/login');
-      router.navigate('/login');
-    } else if (user && (path === '/login' || path === '/')) {
-      window.history.replaceState({}, '', '/dashboard');
-      router.navigate('/dashboard');
-    }
-  });
 
   if (window.location.pathname === '/' || window.location.pathname === '') {
     window.history.replaceState({}, '', '/login');

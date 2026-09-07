@@ -25,7 +25,34 @@ export default defineConfig({
   build: {
     target: 'es2020',
     outDir: 'dist',
-    sourcemap: false
+    sourcemap: false,
+    // Performance budget — warn when chunks exceed these sizes (kB)
+    chunkSizeWarningLimit: 500,
+    cssCodeSplit: true,
+    minify: 'esbuild',
+    reportCompressedSize: true,
+    rollupOptions: {
+      output: {
+        // Split vendor chunks for better caching & code splitting
+        manualChunks(id) {
+          if (id.includes('node_modules/@vladmandic/face-api') || id.includes('node_modules/@tensorflow')) {
+            return 'vendor-faceapi';
+          }
+          if (id.includes('node_modules/dexie') || id.includes('node_modules/dexie-react-hooks')) {
+            return 'vendor-dexie';
+          }
+          if (id.includes('node_modules/@supabase')) {
+            return 'vendor-supabase';
+          }
+          if (id.includes('node_modules/zod')) {
+            return 'vendor-zod';
+          }
+          if (id.includes('node_modules/')) {
+            return 'vendor-other';
+          }
+        }
+      }
+    }
   },
   plugins: [
     VitePWA({
