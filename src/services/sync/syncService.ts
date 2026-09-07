@@ -71,7 +71,6 @@ function getCloudColumns(table: TableKey): string[] {
     case 'students':
       return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at', 'updated_at'];
     case 'faceProfiles':
-      // face_profiles TIDAK punya school_id di cloud
       return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at'];
     case 'attendanceSessions':
       return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'created_by', 'created_at'];
@@ -125,6 +124,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.class_id = r.classId;
       out.status = r.status;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       break;
     }
     case 'faceProfiles': {
@@ -135,6 +135,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.model_version = r.modelVersion;
       out.quality_score = r.qualityScore;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       break;
     }
     case 'attendanceSessions': {
@@ -401,14 +402,43 @@ export class SyncService {
           continue;
         }
         const rows = (data ?? []) as Record<string, unknown>[];
-        const localRows = rows
-          .map((r) => fromCloudRow<TableRowMap[TableKey]>(t.local, r))
-          .filter((r): r is TableRowMap[TableKey] => r !== null);
-        if (localRows.length > 0) {
-          const tableRef = db[t.local] as unknown as { bulkPut: (rows: unknown[]) => Promise<unknown> };
-          await tableRef.bulkPut(localRows);
+        if (rows.length === 0) {
+          result[t.cloud] = 0;
+          continue;
         }
-        result[t.cloud] = localRows.length;
+
+        // Last-write-wins: hanya overwrite local jika cloud updatedAt lebih baru
+        const tableRef = db[t.local] as unknown as { bulkGet: (ids: string[]) => Promise<unknown[]>; bulkPut: (rows: unknown[]) => Promise<unknown> };
+        const incomingIds = rows.map((r) => String((r as { id: unknown }).id));
+        let localRows: Array<{ id: string; updatedAt?: number; createdAt?: number }> = [];
+        try {
+          localRows = (await tableRef.bulkGet(incomingIds)) as Array<{ id: string; updatedAt?: number; createdAt?: number }>;
+        } catch {
+          localRows = [];
+        }
+        const localById = new Map(localRows.filter((r) => r && r.id).map((r) => [r.id, r]));
+
+        const toWrite: TableRowMap[TableKey][] = [];
+        let skipped = 0;
+        for (const raw of rows) {
+          const local = localById.get(String(raw.id));
+          const cloudUpdated = raw.updated_at ? new Date(String(raw.updated_at)).getTime() : 0;
+          const localUpdated = local?.updatedAt ?? local?.createdAt ?? 0;
+          if (local && cloudUpdated > 0 && localUpdated >= cloudUpdated) {
+            // Local lebih baru atau sama - skip
+            skipped++;
+            continue;
+          }
+          const converted = fromCloudRow<TableRowMap[TableKey]>(t.local, raw);
+          if (converted) toWrite.push(converted);
+        }
+        if (toWrite.length > 0) {
+          await tableRef.bulkPut(toWrite);
+        }
+        if (skipped > 0) {
+          console.info(`[sync] Pull ${t.cloud}: ${toWrite.length} applied, ${skipped} skipped (local newer)`);
+        }
+        result[t.cloud] = toWrite.length;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[sync] Pull ${t.cloud} failed: ${msg}`);

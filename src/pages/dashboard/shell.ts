@@ -212,9 +212,24 @@ export function initSyncIndicator(): void {
         <div>${s.pendingPush} item</div>
         <div style="color:#94a3b8;">Local rows</div>
         <div>${total} total</div>
-        <div style="color:#94a3b8;">School ID</div>
-        <div style="font-family:monospace;font-size:11px;word-break:break-all;">${schoolId}</div>
       </div>
+
+      <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">School ID (Multi-Device Sync)</div>
+          <button id="btn-copy-schoolid" style="background:rgba(96,165,250,0.2);color:#93c5fd;border:1px solid rgba(96,165,250,0.3);padding:2px 8px;border-radius:4px;font-size:10px;cursor:pointer;">📋 Copy</button>
+        </div>
+        <div id="schoolid-text" style="font-family:monospace;font-size:11px;word-break:break-all;background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;margin-bottom:8px;">${schoolId}</div>
+        <details>
+          <summary style="cursor:pointer;font-size:11px;color:#93c5fd;padding:2px 0;">Link ke School ID lain (device baru)</summary>
+          <div style="margin-top:6px;display:flex;gap:4px;">
+            <input id="input-schoolid" type="text" placeholder="Paste School ID di sini" style="flex:1;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 6px;font-size:11px;font-family:monospace;" />
+            <button id="btn-link-school" style="background:#0ea572;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;">Link</button>
+          </div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.4;">⚠ Paste School ID dari device yg sudah ada datanya. Setelah link, klik "Push &amp; Pull" untuk sinkronkan. Data lokal akan di-overwrite oleh data cloud.</div>
+        </details>
+      </div>
+
       ${s.lastError ? `
         <div style="background:rgba(220,38,38,0.15);border:1px solid rgba(220,38,38,0.4);border-radius:6px;padding:8px;margin-bottom:10px;">
           <div style="color:#fca5a5;font-weight:600;margin-bottom:4px;">⚠ Error</div>
@@ -242,6 +257,9 @@ export function initSyncIndicator(): void {
 
     const btnNow = document.getElementById('btn-sync-now');
     const btnPull = document.getElementById('btn-pull-only');
+    const btnCopy = document.getElementById('btn-copy-schoolid');
+    const btnLink = document.getElementById('btn-link-school');
+    const inputSchool = document.getElementById('input-schoolid') as HTMLInputElement | null;
     const logEl = document.getElementById('sync-panel-log');
 
     const appendLog = (msg: string) => {
@@ -250,6 +268,57 @@ export function initSyncIndicator(): void {
       const ts = formatTime(Date.now());
       logEl.innerHTML = `[${ts}] ${escapeHtml(msg)}\n` + logEl.innerHTML;
     };
+
+    btnCopy?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(schoolId);
+        const orig = btnCopy.textContent;
+        if (btnCopy) {
+          btnCopy.textContent = '✓ Tersalin!';
+          btnCopy.style.background = 'rgba(16,185,129,0.3)';
+          setTimeout(() => {
+            if (btnCopy) {
+              btnCopy.textContent = orig ?? '📋 Copy';
+              btnCopy.style.background = 'rgba(96,165,250,0.2)';
+            }
+          }, 1500);
+        }
+        appendLog(`School ID disalin ke clipboard: ${schoolId}`);
+      } catch (e) {
+        appendLog(`Gagal copy: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    });
+
+    btnLink?.addEventListener('click', () => {
+      const newId = inputSchool?.value.trim();
+      if (!newId) {
+        appendLog('⚠ Masukkan School ID terlebih dahulu.');
+        return;
+      }
+      // Validasi format UUID
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(newId)) {
+        appendLog('⚠ Format School ID tidak valid (harus UUID).');
+        return;
+      }
+      if (newId === schoolId) {
+        appendLog('⚠ School ID sama dengan yang sekarang.');
+        return;
+      }
+      const oldId = schoolId;
+      try {
+        localStorage.setItem('sf_school_id_override', newId);
+        appendLog(`✓ School ID diubah: ${oldId} → ${newId}`);
+        appendLog('Refresh halaman untuk menerapkan School ID baru.');
+        // Tampilkan instruksi untuk user
+        if (btnLink) {
+          btnLink.textContent = '✓ Saved';
+          btnLink.style.background = '#059669';
+          setTimeout(() => { window.location.reload(); }, 1500);
+        }
+      } catch (e) {
+        appendLog(`Gagal link: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    });
 
     btnNow?.addEventListener('click', async () => {
       isSyncing = true;
