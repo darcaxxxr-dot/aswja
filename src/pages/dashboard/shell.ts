@@ -1,4 +1,4 @@
-import { ROUTES } from '@config/app';
+import { APP_CONFIG, ROUTES } from '@config/app';
 import { router } from '@router/index';
 import { installPromptService } from '@services/pwa/index';
 import { syncService } from '@services/sync/index';
@@ -252,6 +252,9 @@ export function initSyncIndicator(): void {
         <button id="btn-sync-now" class="btn" style="flex:1;background:#0ea572;color:#fff;padding:6px 8px;font-size:12px;min-height:32px;">⬆ Push &amp; Pull</button>
         <button id="btn-pull-only" class="btn" style="flex:1;background:rgba(255,255,255,0.12);color:#fff;padding:6px 8px;font-size:12px;min-height:32px;">⬇ Pull Only</button>
       </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button id="btn-reset-local" class="btn" style="flex:1;background:rgba(220,38,38,0.15);color:#fca5a5;border:1px solid rgba(220,38,38,0.3);padding:6px 8px;font-size:12px;min-height:32px;">🗑 Reset Local Data</button>
+      </div>
       <div id="sync-panel-log" style="margin-top:10px;max-height:120px;overflow:auto;font-size:10px;font-family:monospace;color:#94a3b8;background:rgba(0,0,0,0.3);border-radius:6px;padding:6px;display:none;"></div>
     `;
 
@@ -259,6 +262,7 @@ export function initSyncIndicator(): void {
     const btnPull = document.getElementById('btn-pull-only');
     const btnCopy = document.getElementById('btn-copy-schoolid');
     const btnLink = document.getElementById('btn-link-school');
+    const btnReset = document.getElementById('btn-reset-local');
     const inputSchool = document.getElementById('input-schoolid') as HTMLInputElement | null;
     const logEl = document.getElementById('sync-panel-log');
 
@@ -317,6 +321,97 @@ export function initSyncIndicator(): void {
         }
       } catch (e) {
         appendLog(`Gagal link: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    });
+
+    btnReset?.addEventListener('click', async () => {
+      const confirmed = window.confirm(
+        '⚠ RESET LOCAL DATA\n\n' +
+        'Ini akan MENGHAPUS semua data di browser ini:\n' +
+        '• Semua IndexedDB (siswa, kelas, absensi, face profiles)\n' +
+        '• localStorage (school_id, device_id, auth)\n\n' +
+        'Data di CLOUD (Supabase) TIDAK akan terhapus.\n' +
+        'Setelah reset, klik "Push & Pull" untuk tarik data dari cloud.\n\n' +
+        'Lanjutkan?'
+      );
+      if (!confirmed) return;
+
+      // Konfirmasi kedua dengan mengetik RESET
+      const typed = window.prompt('Ketik "RESET" (huruf besar) untuk konfirmasi:');
+      if (typed !== 'RESET') {
+        appendLog('Reset dibatalkan.');
+        return;
+      }
+
+      const resetBtn = btnReset as HTMLButtonElement | null;
+      if (resetBtn) {
+        resetBtn.disabled = true;
+        resetBtn.textContent = '⏳ Menghapus...';
+      }
+      appendLog('🗑 Memulai reset local data...');
+
+      try {
+        // 1. Stop sync supaya tidak auto-push saat reset
+        syncService.stopAutoSync();
+
+        // 2. Stop camera kalau aktif
+        try {
+          const { cameraService } = await import('@services/camera');
+          await cameraService.stop();
+        } catch {
+          // ignore - camera service might not be available
+        }
+
+        // 3. Clear IndexedDB
+        await db.resetAll();
+        appendLog('✓ IndexedDB cleared');
+
+        // 4. Clear localStorage (hanya keys yang dipakai app)
+        const keysToRemove = [
+          APP_CONFIG.deviceIdKey,
+          APP_CONFIG.schoolIdKey,
+          APP_CONFIG.schoolIdOverrideKey,
+          'auth.lastActivity',
+          'auth.logoutReason'
+        ];
+        for (const key of keysToRemove) {
+          try { localStorage.removeItem(key); } catch { /* ignore */ }
+        }
+        // Also clear any supabase auth keys (pattern-based)
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('sb-') || k.includes('-auth-token'))) {
+            localStorage.removeItem(k);
+          }
+        }
+        appendLog('✓ localStorage cleared');
+
+        // 5. Unregister service workers
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) {
+            await reg.unregister();
+          }
+          appendLog(`✓ ${regs.length} service worker unregistered`);
+        }
+
+        // 6. Clear caches
+        if ('caches' in window) {
+          const names = await caches.keys();
+          for (const name of names) {
+            await caches.delete(name);
+          }
+          appendLog(`✓ ${names.length} cache cleared`);
+        }
+
+        appendLog('✓ Reset selesai! Mengarahkan ke /login...');
+        setTimeout(() => { window.location.href = '/login'; }, 1500);
+      } catch (e) {
+        appendLog(`✗ Reset gagal: ${e instanceof Error ? e.message : String(e)}`);
+        if (resetBtn) {
+          resetBtn.disabled = false;
+          resetBtn.textContent = '🗑 Reset Local Data';
+        }
       }
     });
 
