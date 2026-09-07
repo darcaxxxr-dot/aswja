@@ -13,6 +13,8 @@ export interface Student {
   status: StudentStatus;
   createdAt: number;
   updatedAt: number;
+  /** Soft-delete tombstone. When set, the row is hidden from UI but still in DB & synced. */
+  deletedAt?: number;
 }
 
 export interface ClassRoom {
@@ -23,6 +25,7 @@ export interface ClassRoom {
   academicYearId: string;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }
 
 export interface FaceProfile {
@@ -33,6 +36,7 @@ export interface FaceProfile {
   qualityScore: number;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }
 
 export type AttendanceStatus = 'HADIR' | 'TERLAMBAT' | 'IZIN' | 'SAKIT' | 'ALPA';
@@ -49,6 +53,7 @@ export interface AttendanceSession {
   status: SessionStatus;
   createdBy: string;
   createdAt: number;
+  deletedAt?: number;
 }
 
 export interface AttendanceRecord {
@@ -61,6 +66,7 @@ export interface AttendanceRecord {
   confidence: number;
   deviceId: string;
   createdAt: number;
+  deletedAt?: number;
 }
 
 export type UserRole = 'ADMIN' | 'TEACHER';
@@ -74,6 +80,7 @@ export interface User {
   role: UserRole;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }
 
 export interface Setting {
@@ -103,6 +110,7 @@ export interface School {
   name: string;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }
 
 export interface AcademicYear {
@@ -114,4 +122,5 @@ export interface AcademicYear {
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }

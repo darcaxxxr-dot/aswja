@@ -39,6 +39,20 @@ export class SmartFaceDB extends Dexie {
       settings: 'key, updatedAt',
       syncQueue: 'id, entity, operation, status, createdAt, [entity+status]'
     });
+
+    // v3: Tambah deletedAt index untuk soft-delete sync
+    this.version(3).stores({
+      schools: 'id, name, createdAt, deletedAt',
+      academicYears: 'id, schoolId, name, isActive, startDate, endDate, createdAt, updatedAt, deletedAt',
+      classes: 'id, schoolId, academicYearId, grade, name, createdAt, deletedAt, [schoolId+grade+name]',
+      students: 'id, schoolId, nis, classId, status, name, createdAt, deletedAt, [schoolId+classId], [schoolId+nis]',
+      faceProfiles: 'id, studentId, modelVersion, createdAt, deletedAt',
+      attendanceSessions: 'id, schoolId, classId, date, status, createdAt, deletedAt, [schoolId+classId+date]',
+      attendanceRecords: 'id, schoolId, sessionId, studentId, status, timestamp, deletedAt, [sessionId+studentId], [sessionId+timestamp]',
+      users: 'id, schoolId, username, role, createdAt, deletedAt, [schoolId+username]',
+      settings: 'key, updatedAt',
+      syncQueue: 'id, entity, operation, status, createdAt, [entity+status]'
+    });
   }
 
   async resetAll(): Promise<void> {
@@ -71,6 +85,28 @@ export class SmartFaceDB extends Dexie {
         ]);
       }
     );
+  }
+
+  /** Soft-delete a row by id (sets deletedAt = now). */
+  async softDelete(table: 'schools' | 'academicYears' | 'classes' | 'students' | 'faceProfiles' | 'attendanceSessions' | 'attendanceRecords' | 'users', id: string): Promise<void> {
+    const t = this[table] as unknown as { update: (id: string, changes: Record<string, unknown>) => Promise<unknown> };
+    await t.update(id, { deletedAt: Date.now(), updatedAt: Date.now() });
+  }
+
+  /** Hard-delete rows where deletedAt < cutoff (cleanup tombstones older than N days). */
+  async purgeDeleted(cutoffMs: number): Promise<number> {
+    const tables: Array<'schools' | 'academicYears' | 'classes' | 'students' | 'faceProfiles' | 'attendanceSessions' | 'attendanceRecords' | 'users'> =
+      ['schools', 'academicYears', 'classes', 'students', 'faceProfiles', 'attendanceSessions', 'attendanceRecords', 'users'];
+    let purged = 0;
+    for (const t of tables) {
+      const tbl = this[t] as unknown as { filter: (fn: (r: { deletedAt?: number }) => boolean) => { toArray: () => Promise<unknown[]>; delete: () => Promise<number> } };
+      const rows = await tbl.filter((r) => (r.deletedAt ?? 0) < cutoffMs && (r.deletedAt ?? 0) > 0).toArray();
+      for (const r of rows) {
+        await (this[t] as unknown as { delete: (id: string) => Promise<unknown> }).delete((r as { id: string }).id);
+        purged++;
+      }
+    }
+    return purged;
   }
 
   async counts(): Promise<Record<string, number>> {

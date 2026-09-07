@@ -63,19 +63,19 @@ type TableRowMap = {
 function getCloudColumns(table: TableKey): string[] {
   switch (table) {
     case 'schools':
-      return ['id', 'name', 'created_at'];
+      return ['id', 'name', 'created_at', 'deleted_at'];
     case 'academicYears':
-      return ['id', 'name', 'school_id', 'start_date', 'end_date', 'is_active', 'created_at'];
+      return ['id', 'name', 'school_id', 'start_date', 'end_date', 'is_active', 'created_at', 'deleted_at'];
     case 'classes':
-      return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at'];
+      return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at', 'deleted_at'];
     case 'students':
-      return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at', 'updated_at'];
+      return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at', 'updated_at', 'deleted_at'];
     case 'faceProfiles':
-      return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at'];
+      return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at', 'deleted_at'];
     case 'attendanceSessions':
-      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'created_by', 'created_at'];
+      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'created_by', 'created_at', 'deleted_at'];
     case 'attendanceRecords':
-      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_at'];
+      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_at', 'deleted_at'];
     default:
       return [];
   }
@@ -90,6 +90,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.id = r.id;
       out.name = r.name;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
     case 'academicYears': {
@@ -101,6 +102,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.end_date = r.endDate;
       out.is_active = r.isActive;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
     case 'classes': {
@@ -111,6 +113,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.grade = r.grade;
       out.name = r.name;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
     case 'students': {
@@ -125,6 +128,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.status = r.status;
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
+      if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
     case 'faceProfiles': {
@@ -136,6 +140,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.quality_score = r.qualityScore;
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
+      if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
     case 'attendanceSessions': {
@@ -149,6 +154,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.status = r.status;
       out.created_by = r.createdBy;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
     case 'attendanceRecords': {
@@ -162,6 +168,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.confidence = r.confidence;
       out.device_id = r.deviceId;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
   }
@@ -173,7 +180,7 @@ function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
-function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: number; createdAt?: number; timestamp?: number; startTime?: number; endTime?: number }>(table: TableKey, raw: Record<string, unknown>): T | null {
+function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: number; createdAt?: number; timestamp?: number; startTime?: number; endTime?: number; deletedAt?: number }>(table: TableKey, raw: Record<string, unknown>): T | null {
   if (!raw.id) return null;
   const id = String(raw.id);
   const createdAt = raw.created_at ? new Date(String(raw.created_at)).getTime() : Date.now();
@@ -184,6 +191,10 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
     const camelKey = snakeToCamel(key);
     processed[camelKey] = value;
   }
+
+  // Parse deletedAt from cloud (snake_case → camelCase already done above)
+  const deletedAt = processed.deletedAt ? new Date(String(processed.deletedAt)).getTime() : undefined;
+  const updatedAt = processed.updatedAt ? new Date(String(processed.updatedAt)).getTime() : createdAt;
 
   if (table === 'attendanceRecords') {
     const ar = processed as Record<string, unknown> & { sessionId: string; studentId: string; status: string; confidence: number; deviceId: string };
@@ -196,7 +207,9 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       status: ar.status as AttendanceRecord['status'],
       confidence: Number(ar.confidence ?? 0),
       deviceId: ar.deviceId ?? '',
-      createdAt
+      createdAt,
+      updatedAt,
+      deletedAt
     } as unknown as T;
   }
   if (table === 'attendanceSessions') {
@@ -210,7 +223,9 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       endTime: s.end_time ? new Date(String(s.end_time)).getTime() : undefined,
       status: s.status as AttendanceSession['status'],
       createdBy: s.createdBy ?? '',
-      createdAt
+      createdAt,
+      updatedAt,
+      deletedAt
     } as unknown as T;
   }
 
@@ -223,7 +238,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       modelVersion: f.modelVersion ?? 'unknown',
       qualityScore: Number(f.qualityScore ?? 0),
       createdAt,
-      updatedAt: createdAt
+      updatedAt,
+      deletedAt
     } as unknown as T;
   }
 
@@ -239,7 +255,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       classId: s.classId,
       status: (s.status as Student['status']) ?? 'active',
       createdAt,
-      updatedAt: createdAt
+      updatedAt,
+      deletedAt
     } as unknown as T;
   }
 
@@ -253,7 +270,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       grade: c.grade,
       academicYearId: String(academicYearId),
       createdAt,
-      updatedAt: createdAt
+      updatedAt,
+      deletedAt
     } as unknown as T;
   }
 

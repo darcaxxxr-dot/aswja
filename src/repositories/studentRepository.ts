@@ -19,19 +19,27 @@ export interface CreateStudentInput {
 
 export class StudentRepository {
   async list(): Promise<Student[]> {
-    return db.students.orderBy('createdAt').reverse().toArray();
+    return db.students
+      .filter((s) => !s.deletedAt)
+      .toArray()
+      .then((arr) => arr.sort((a, b) => b.createdAt - a.createdAt));
   }
 
   async listByClass(classId: string): Promise<Student[]> {
-    return db.students.where('classId').equals(classId).toArray();
+    return db.students
+      .where('classId').equals(classId)
+      .filter((s) => !s.deletedAt)
+      .toArray();
   }
 
   async getById(id: string): Promise<Student | undefined> {
-    return db.students.get(id);
+    const s = await db.students.get(id);
+    return s && !s.deletedAt ? s : undefined;
   }
 
   async getByNis(nis: string): Promise<Student | undefined> {
-    return db.students.where('nis').equals(nis).first();
+    const s = await db.students.where('nis').equals(nis).first();
+    return s && !s.deletedAt ? s : undefined;
   }
 
   async create(input: CreateStudentInput): Promise<Student> {
@@ -58,17 +66,28 @@ export class StudentRepository {
     patch: Partial<Omit<Student, 'id' | 'schoolId' | 'createdAt'>>
   ): Promise<Student> {
     const existing = await db.students.get(id);
-    if (!existing) throw new Error(`Student ${id} not found`);
+    if (!existing || existing.deletedAt) throw new Error(`Student ${id} not found`);
     const updated: Student = { ...existing, ...patch, updatedAt: now() };
     await db.students.put(updated);
     pushAsync();
     return updated;
   }
 
+  /**
+   * Soft-delete: set deletedAt = now() instead of removing the row.
+   * The row stays in IndexedDB and will be synced to other devices.
+   * Other devices will then apply the soft-delete (their `list()` will skip it).
+   */
   async remove(id: string): Promise<void> {
     await db.transaction('rw', [db.students, db.faceProfiles], async () => {
-      await db.faceProfiles.where('studentId').equals(id).delete();
-      await db.students.delete(id);
+      const ts = now();
+      // Soft-delete the student
+      await db.students.update(id, { deletedAt: ts, updatedAt: ts });
+      // Also soft-delete their face profiles (cascade)
+      const profiles = await db.faceProfiles.where('studentId').equals(id).toArray();
+      for (const p of profiles) {
+        await db.faceProfiles.update(p.id, { deletedAt: ts });
+      }
     });
     pushAsync();
   }
