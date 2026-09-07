@@ -54,7 +54,12 @@ export function getSupabaseClient(): SupabaseClient | null {
   const cfg = getSupabaseConfig();
   if (!cfg) return null;
   cachedClient = createClient(cfg.url, cfg.anonKey, {
-    auth: { persistSession: cfg.source === 'runtime', autoRefreshToken: cfg.source === 'runtime' },
+    // Always persist the session in localStorage so the user stays logged in
+    // across full page reloads (which the login flow triggers via
+    // window.location.pathname). Without this, signIn would succeed but
+    // getSession() would return null on the next page load, causing the
+    // auth state listener to redirect the user back to /login.
+    auth: { persistSession: true, autoRefreshToken: true },
     db: { schema: 'public' }
   });
   return cachedClient;

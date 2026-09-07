@@ -1,6 +1,7 @@
 import { authService, AuthError } from '@services/auth/index';
 import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
+import { router } from '@router/index';
 
 export async function renderLogin(root: HTMLElement): Promise<void> {
   // Animated gradient background (mounted once)
@@ -77,7 +78,11 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
       const user = await authService.signIn(email, password);
       msg.innerHTML = `✓ Masuk sebagai <strong>${user.displayName}</strong>`;
       msg.style.color = 'var(--aswja-primary-dark)';
-      setTimeout(() => { window.location.pathname = ROUTES.dashboard; }, 600);
+      // Use router.navigate (SPA navigation) instead of window.location.pathname
+      // to avoid a full page reload. The auth state listener in app.ts also
+      // navigates to /dashboard, but doing it here too ensures we move on
+      // even if the listener is delayed by the initial-session check.
+      setTimeout(() => { router.navigate(ROUTES.dashboard); }, 300);
     } catch (err: unknown) {
       const m = err instanceof AuthError ? err.message : (err as Error).message;
       msg.innerHTML = `✗ ${m}`;

@@ -1,6 +1,7 @@
 import { authService, AuthError, SUBROLE_LABELS, type UserSubRole } from '@services/auth/index';
 import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
+import { router } from '@router/index';
 
 const BACKDOOR_PATH = '/__setup__';
 
@@ -84,7 +85,7 @@ export async function renderSetup(root: HTMLElement): Promise<void> {
       const user = await authService.createSuperuser(email, password, name, subRole);
       msg.innerHTML = `✓ Akun <strong>${user.displayName}</strong> (${user.role}) berhasil dibuat.`;
       msg.style.color = 'var(--aswja-primary-dark)';
-      setTimeout(() => { window.location.pathname = ROUTES.dashboard; }, 1500);
+      setTimeout(() => { router.navigate(ROUTES.dashboard); }, 1000);
     } catch (err: unknown) {
       const m = err instanceof AuthError ? err.message : (err as Error).message;
       msg.innerHTML = `✗ ${m}`;
