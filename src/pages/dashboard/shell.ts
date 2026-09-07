@@ -423,9 +423,12 @@ export function initSyncIndicator(): void {
         const r = await syncService.runFullSync();
         appendLog(`Done: pushed=${JSON.stringify(r.pushed)} pulled=${JSON.stringify(r.pulled)} ok=${r.ok} ${r.durationMs}ms`);
         if (!r.ok && r.errors.length) appendLog(`Errors: ${r.errors.join('; ')}`);
+        if (r.ok) {
+          appendLog('↻ Halaman akan direfresh untuk menampilkan data terbaru...');
+          setTimeout(() => { window.location.reload(); }, 1200);
+        }
       } catch (e) {
         appendLog(`Failed: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
         isSyncing = false;
         const cur = await syncService.getStatus();
         renderBadge(cur);
@@ -440,9 +443,10 @@ export function initSyncIndicator(): void {
       try {
         const r = await syncService.pullAll();
         appendLog(`Pulled: ${JSON.stringify(r)}`);
+        appendLog('↻ Halaman akan direfresh untuk menampilkan data terbaru...');
+        setTimeout(() => { window.location.reload(); }, 1200);
       } catch (e) {
         appendLog(`Pull failed: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
         isSyncing = false;
         const cur = await syncService.getStatus();
         renderBadge(cur);
