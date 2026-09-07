@@ -320,6 +320,13 @@ export function initSyncIndicator(): void {
     if (panel && panel.style.display === 'block') void renderPanel(s);
   });
 
+  // Fetch current status immediately so badge doesn't stay at "Sync: —"
+  void (async () => {
+    const cur = await syncService.getStatus();
+    lastStatus = cur;
+    renderBadge(cur);
+  })();
+
   // Auto-refresh panel every 5s if open
   setInterval(async () => {
     if (panel && panel.style.display === 'block') {
@@ -354,56 +361,55 @@ export function pageNotFound(root: HTMLElement): void {
 }
 
 export function initDashboardAndShell(root: HTMLElement): void {
-  const shellWithUser = async () => {
+  const mountShell = async (): Promise<HTMLElement> => {
     const user = await authService.getCurrentUser();
-    return renderAppShell(window.location.pathname, user);
+    root.innerHTML = renderAppShell(window.location.pathname, user);
+    // Re-init all shell indicators after DOM is replaced
+    initSyncIndicator();
+    initOfflineIndicator();
+    initIdleIndicator();
+    initInstallPrompt();
+    return root.querySelector<HTMLElement>('#page-root')!;
   };
 
   router.addRoute(ROUTES.dashboard, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderDashboard } = await import('@pages/dashboard/index');
     await renderDashboard(pageRoot);
   }, 'Dashboard');
 
   router.addRoute(ROUTES.students, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderStudents } = await import('@pages/students/index');
     await renderStudents(pageRoot);
   }, 'Manajemen Siswa');
 
   router.addRoute(ROUTES.classes, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderClasses } = await import('@pages/classes/index');
     await renderClasses(pageRoot);
   }, 'Manajemen Kelas');
 
   router.addRoute(ROUTES.enrollment, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderEnrollment } = await import('@pages/enrollment/index');
     await renderEnrollment(pageRoot);
   }, 'Face Enrollment');
 
   router.addRoute(ROUTES.attendance, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderAttendance } = await import('@pages/attendance/index');
     await renderAttendance(pageRoot);
   }, 'Sesi Absensi');
 
   router.addRoute(ROUTES.reports, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderReports } = await import('@pages/reports/index');
     await renderReports(pageRoot);
   }, 'Laporan');
 
   router.addRoute(ROUTES.settings, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderSettings } = await import('@pages/settings/index');
     await renderSettings(pageRoot);
   }, 'Pengaturan');
@@ -423,29 +429,25 @@ export function initDashboardAndShell(root: HTMLElement): void {
   }, 'Setup Superuser (hidden)');
 
   router.addRoute(ROUTES.cameraTest, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderCameraTest } = await import('@pages/camera-test/index');
     await renderCameraTest(pageRoot);
   }, 'Camera Test');
 
   router.addRoute('/face-test', async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderFaceTest } = await import('@pages/face-test/index');
     await renderFaceTest(pageRoot);
   }, 'Face AI Test');
 
   router.addRoute('/db-test', async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderDbTest } = await import('@pages/db-test/index');
     await renderDbTest(pageRoot);
   }, 'DB Test');
 
   router.addRoute('/supabase-test', async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderSupabaseTest } = await import('@pages/supabase-test/index');
     await renderSupabaseTest(pageRoot);
   }, 'Supabase Test');
@@ -460,15 +462,13 @@ export function initDashboardAndShell(root: HTMLElement): void {
 
   router.addRoute(ROUTES.studentImport, () => renderPlaceholder(root, 'Import Siswa'), 'Import Siswa');
   router.addRoute(`${ROUTES.students}/:id`, async (params) => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderStudentDetail } = await import('@pages/students/index');
     await renderStudentDetail(pageRoot, params);
   }, 'Detail Siswa');
 
   router.addRoute(ROUTES.studentImport, async () => {
-    root.innerHTML = await shellWithUser();
-    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const pageRoot = await mountShell();
     const { renderStudentImport } = await import('@pages/students/index');
     await renderStudentImport(pageRoot);
   }, 'Import Siswa');
