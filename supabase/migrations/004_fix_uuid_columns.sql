@@ -4,11 +4,13 @@
 -- App ini menggunakan format ID: PREFIX-UUID, contoh:
 --   STU-..., CLS-..., FP-..., ATT-..., SES-...
 -- Supabase default uuid tidak menerima format itu.
--- Karena kolom dipakai di RLS policy, kita drop policy dulu.
+-- Karena kolom dipakai di RLS policy dan FK, kita drop semuanya dulu.
 
 -- ============================================
--- 1. DROP ALL RLS POLICIES DULU
+-- 1. DROP CONSTRAINTS & POLICIES DULU
 -- ============================================
+alter table public.schools drop constraint if exists "schools_school_id_fkey";
+
 drop policy if exists "schools_select_own" on public.schools;
 drop policy if exists "schools_admin_write" on public.schools;
 drop policy if exists "academic_years_school_isolation" on public.academic_years;
@@ -22,6 +24,7 @@ drop policy if exists "attendance_records_school_isolation" on public.attendance
 -- 2. ALTER COLUMN TYPES
 -- ============================================
 alter table public.schools alter column id type text using id::text;
+alter table public.schools alter column school_id type text using school_id::text;
 
 alter table public.academic_years alter column id type text using id::text;
 alter table public.academic_years alter column school_id type text using school_id::text;
@@ -50,7 +53,13 @@ alter table public.users alter column id type text using id::text;
 alter table public.users alter column school_id type text using school_id::text;
 
 -- ============================================
--- 3. REBUILD RLS POLICIES
+-- 3. OPTIONAL: recreate self-reference FK on schools
+-- ============================================
+alter table public.schools add constraint "schools_school_id_fkey" 
+  foreign key (school_id) references public.schools(id) on delete set null;
+
+-- ============================================
+-- 4. REBUILD RLS POLICIES
 -- ============================================
 create policy "schools_select_own"
   on public.schools for select to anon, authenticated
@@ -110,7 +119,7 @@ create policy "attendance_records_school_isolation"
   with check (school_id = public.get_user_school());
 
 -- ============================================
--- 4. GRANT permissions
+-- 5. GRANT permissions
 -- ============================================
 grant usage on schema public to anon, authenticated;
 grant all on all tables in schema public to anon, authenticated;
