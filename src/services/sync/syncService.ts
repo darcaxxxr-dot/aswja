@@ -441,9 +441,11 @@ export class SyncService {
         for (const raw of rows) {
           const local = localById.get(String(raw.id));
           const cloudUpdated = raw.updated_at ? new Date(String(raw.updated_at)).getTime() : 0;
-          const localUpdated = local?.updatedAt ?? local?.createdAt ?? 0;
-          if (local && cloudUpdated > 0 && localUpdated >= cloudUpdated) {
-            // Local lebih baru atau sama - skip
+          // Untuk last-write-wins: hanya skip jika local punya updatedAt DAN lebih baru
+          // Jika local.updatedAt tidak ada (mis. tabel lama), pakai 0 supaya cloud overwrite
+          const localUpdated = local?.updatedAt ?? 0;
+          if (local && localUpdated > 0 && localUpdated > cloudUpdated) {
+            // Local lebih baru - skip
             skipped++;
             continue;
           }

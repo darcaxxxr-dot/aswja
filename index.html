@@ -47,17 +47,5 @@
       #initial-splash.hidden { display: none; }
     </style>
     <script type="module" src="/src/main.ts"></script>
-    <script>
-      // Hide splash once app boots
-      window.addEventListener('app-ready', () => {
-        const s = document.getElementById('initial-splash');
-        if (s) s.classList.add('hidden');
-      });
-      // Safety: auto-hide after 5s
-      setTimeout(() => {
-        const s = document.getElementById('initial-splash');
-        if (s) s.classList.add('hidden');
-      }, 5000);
-    </script>
   </body>
 </html>
