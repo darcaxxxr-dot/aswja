@@ -125,6 +125,10 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
   let cancelEnrollment = false;
   let visualizerFrame: number | null = null;
   let bypassLiveness = false;
+  /** AbortController to stop in-flight liveness/embed loops when bypass is clicked. */
+  let enrollAbort: AbortController | null = null;
+  /** Currently-active enrollment promise so we can wait for it after abort. */
+  let enrollInFlight: Promise<unknown> | null = null;
 
   // --- Helpers ---
   const log = (msg: string) => {
@@ -398,22 +402,38 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
     const statusEl = enrollStep.querySelector<HTMLDivElement>('#enroll-status');
     if (!statusEl) return;
 
-    // Tombol bypass liveness - operator bisa skip tanpa menunggu timeout
+    // Create a fresh AbortController for this run; any previous run is aborted first.
+    if (enrollAbort) enrollAbort.abort();
+    enrollAbort = new AbortController();
+    const signal = enrollAbort.signal;
+
+    // Tombol bypass liveness - abort in-flight liveness lalu lanjut embed
     const btnSkipLiveness = enrollStep.querySelector<HTMLButtonElement>('#btn-skip-liveness');
     btnSkipLiveness?.addEventListener('click', () => {
-      bypassLiveness = true;
-      log('Operator memilih bypass liveness. Lanjut enrollment tanpa verifikasi...');
+      log('Operator memilih bypass liveness. Menghentikan liveness check & langsung ke embed...');
       btnSkipLiveness.disabled = true;
       btnSkipLiveness.textContent = '✓ Liveness dilewati';
-      // Re-run flow dengan skipLiveness=true
-      void runEnrollmentFlow(student);
+      // Abort the in-flight liveness loop so the overlay stops showing liveness prompts
+      // and the in-flight promise rejects with AbortError.
+      enrollAbort?.abort();
+      // Wait for the in-flight promise to settle (it will reject with AbortError),
+      // then restart with skipLiveness=true and a fresh controller.
+      void (async () => {
+        if (enrollInFlight) {
+          try { await enrollInFlight; } catch { /* expected */ }
+        }
+        // After abort, set the bypass flag and re-run.
+        bypassLiveness = true;
+        void runEnrollmentFlow(student);
+      })();
     });
 
-    // Tombol cancel - hentikan enrollment
+    // Tombol cancel - abort enrollment
     const btnCancelFlow = enrollStep.querySelector<HTMLButtonElement>('#btn-cancel-flow');
     btnCancelFlow?.addEventListener('click', () => {
       cancelEnrollment = true;
       log('Membatalkan enrollment dari flow...');
+      enrollAbort?.abort();
     });
 
     const setStatus = (title: string, detail: string) => {
@@ -421,81 +441,138 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
       statusEl.innerHTML = `<p><strong>${title}</strong></p><p>${detail}</p>`;
     };
 
-    try {
-      startVisualizer();
-      const result = await enrollmentService.enrollStudentWithFlow(student, video, {
-        onStep: (step, msg) => {
-          if (cancelEnrollment) throw new Error('Dibatalkan pengguna.');
-          const title = step === 'liveness' ? 'Verifikasi Liveness' : step === 'front' ? 'Pose 1: Hadap Depan' : step === 'right' ? 'Pose 2: Serong Kanan' : 'Pose 3: Serong Kiri';
-          setStatus(title, msg);
-          if (instructionOverlay) {
-            instructionOverlay.innerHTML = `<span style="font-size:14px;color:#94a3b8;margin-right:8px;">${title}</span> ${msg}`;
-            instructionOverlay.style.display = 'block';
-          }
-          log(msg);
-        },
-        skipLiveness: bypassLiveness
-      });
+    const showOverlay = (title: string, sub: string) => {
+      if (cancelEnrollment) return;
+      if (instructionOverlay) {
+        instructionOverlay.innerHTML =
+          `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">` +
+          `<span style="font-size:13px;color:#94a3b8;letter-spacing:0.5px;">${title}</span>` +
+          `<span style="font-size:18px;font-weight:600;">${sub}</span></div>`;
+        instructionOverlay.style.display = 'block';
+      }
+    };
 
-      const bypassMsg = result.livenessBypassed ? ' (liveness dilewati oleh operator)' : '';
-      statusEl.insertAdjacentHTML('beforeend', `<div style="margin-top:8px;color:var(--color-success);"><strong>✓ Enrollment selesai.</strong> Avg quality: ${result.avgQuality.toFixed(2)}, ${result.profiles.length} profile tersimpan.${bypassMsg}</div>`);
-      log(`✓ Enrollment ${student.name} selesai. Quality=${result.avgQuality.toFixed(2)}${bypassMsg}`);
-      await refreshStudents();
-    } catch (err: unknown) {
-      // DEBUG: log error ke console
-      console.error('Enrollment error:', err);
+    const clearOverlay = () => {
+      if (instructionOverlay) instructionOverlay.style.display = 'none';
+    };
 
-      // Cek apakah error adalah FaceError dengan properti bypassable
-      const isBypassable = err instanceof FaceError && err.bypassable === true;
+    const this_sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-      if (isBypassable && !bypassLiveness) {
-        // --- TAMPILAN BYPASS YANG DIPERINDAH ---
-        statusEl.insertAdjacentHTML('beforeend', `
-          <div id="bypass-container" style="margin-top:16px; padding:20px; background: linear-gradient(145deg, #fffbeb, #fef3c7); border: 2px solid #f59e0b; border-radius: 16px; box-shadow: 0 8px 30px rgba(245, 158, 11, 0.25); text-align: center; animation: fadeInUp 0.5s ease;">
-            <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:6px;">
-              <span style="font-size:32px;">⚠️</span>
-              <span style="font-weight:800; font-size:20px; color:#78350f;">Liveness Gagal Terdeteksi</span>
-            </div>
-            <p style="margin:0 0 4px 0; color:#92400e; font-size:15px; font-weight:500;">Sistem gagal membaca kedipan atau gerakan wajah secara otomatis.</p>
-            <p style="margin:0 0 16px 0; color:#b45309; font-size:14px;">Jika wajah sudah berada di tengah dan terlihat jelas, klik tombol di bawah untuk <strong>melewati</strong> verifikasi.</p>
-            <button id="btn-bypass-liveness" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; padding: 14px 40px; border-radius: 50px; font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.5); transition: transform 0.2s ease, box-shadow 0.2s ease; letter-spacing: 0.5px;">✅ Konfirmasi & Lanjutkan</button>
-            <p style="margin:8px 0 0 0; font-size:12px; color:#92400e;">* Tindakan ini akan dicatat sebagai "Bypass Operator" di log sistem.</p>
-          </div>
-        `);
+    const promise = (async () => {
+      try {
+        startVisualizer();
+        const result = await enrollmentService.enrollStudentWithFlow(student, video, {
+          onStep: (step, msg) => {
+            if (cancelEnrollment) return;
+            const title = step === 'liveness' ? 'Verifikasi Liveness' : step === 'front' ? 'Pose 1: Hadap Depan' : step === 'right' ? 'Pose 2: Serong Kanan' : 'Pose 3: Serong Kiri';
+            setStatus(title, msg);
+            // Untuk embed, tampilkan instruksi bertahap di overlay kamera
+            if (step === 'front') showOverlay('Tahap Embed (1/3)', 'Hadap tengah');
+            else if (step === 'right') showOverlay('Tahap Embed (2/3)', 'Hadap serong kanan');
+            else if (step === 'left') showOverlay('Tahap Embed (3/3)', 'Hadap serong kiri');
+            else if (step === 'liveness') showOverlay('Verifikasi Liveness', msg);
+            log(msg);
+          },
+          skipLiveness: bypassLiveness,
+          signal
+        });
 
-        // Tambahkan animasi fade-in (jika belum ada)
-        if (!document.getElementById('bypass-anim-style')) {
-          const style = document.createElement('style');
-          style.id = 'bypass-anim-style';
-          style.textContent = `
-            @keyframes fadeInUp {
-              from { opacity: 0; transform: translateY(20px); }
-              to { opacity: 1; transform: translateY(0); }
-            }
-          `;
-          document.head.appendChild(style);
+        // Tunggu sebentar setelah capture terakhir sebelum tampilkan success
+        await this_sleep(800);
+        if (signal.aborted) return;
+
+        const bypassMsg = result.livenessBypassed ? ' (liveness dilewati oleh operator)' : '';
+        statusEl.insertAdjacentHTML('beforeend',
+          `<div style="margin-top:8px;color:var(--color-success);"><strong>✓ Enrollment selesai.</strong> ` +
+          `Avg quality: ${result.avgQuality.toFixed(2)}, ${result.profiles.length} profile tersimpan.${bypassMsg}</div>`);
+        log(`✓ Enrollment ${student.name} selesai. Quality=${result.avgQuality.toFixed(2)}${bypassMsg}`);
+
+        // Tampilkan notifikasi "selesai" di overlay & mulai hitung mundur 5 detik auto-close
+        showOverlay('✓ Enrollment Selesai', 'Kamera akan otomatis berhenti dalam 5 detik...');
+        await refreshStudents();
+
+        // Countdown di overlay (5 → 0)
+        for (let i = 5; i > 0; i--) {
+          if (signal.aborted) return;
+          showOverlay('✓ Enrollment Selesai', `Kamera berhenti otomatis dalam ${i}...`);
+          await this_sleep(1000);
         }
 
-        // Event listener untuk tombol bypass
-        const bypassBtn = statusEl.querySelector<HTMLButtonElement>('#btn-bypass-liveness');
-        bypassBtn?.addEventListener('click', () => {
-          bypassLiveness = true;
-          log('Operator mengkonfirmasi liveness (bypass). Melanjutkan enrollment...');
-          const bypassContainer = bypassBtn.closest('#bypass-container');
-          if (bypassContainer) bypassContainer.remove();
-          void runEnrollmentFlow(student);
-        });
-        return;
-      } else {
-        // Jika error tidak bypassable atau bypass sudah dipakai, tampilkan error biasa
+        // Auto-stop kamera
+        clearOverlay();
+        if (visualizerFrame) cancelAnimationFrame(visualizerFrame);
+        visualizerFrame = null;
+        isVisualizing = false;
+        await cameraService.stop();
+        cameraActive = false;
+        if (overlayCtx && overlay) overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+        if (placeholder) {
+          placeholder.style.display = 'flex';
+          placeholder.style.opacity = '1';
+        }
+        if (video) video.style.display = 'none';
+        if (enrollWorkflow) enrollWorkflow.style.display = 'none';
+        updateStatusIndicators();
+        updateEnrollButtons();
+        log('Kamera dihentikan otomatis (enrollment selesai).');
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // Aborted - don't show error, just return. The bypass handler will restart.
+          return;
+        }
+        console.error('Enrollment error:', err);
+        const isBypassable = err instanceof FaceError && err.bypassable === true;
+
+        if (isBypassable && !bypassLiveness) {
+          // TAMPILAN BYPASS yang menarik
+          statusEl.insertAdjacentHTML('beforeend', `
+            <div id="bypass-container" style="margin-top:16px; padding:20px; background: linear-gradient(145deg, #fffbeb, #fef3c7); border: 2px solid #f59e0b; border-radius: 16px; box-shadow: 0 8px 30px rgba(245, 158, 11, 0.25); text-align: center; animation: fadeInUp 0.5s ease;">
+              <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:6px;">
+                <span style="font-size:32px;">⚠️</span>
+                <span style="font-weight:800; font-size:20px; color:#78350f;">Liveness Gagal Terdeteksi</span>
+              </div>
+              <p style="margin:0 0 4px 0; color:#92400e; font-size:15px; font-weight:500;">Sistem gagal membaca kedipan atau gerakan wajah secara otomatis.</p>
+              <p style="margin:0 0 16px 0; color:#b45309; font-size:14px;">Jika wajah sudah berada di tengah dan terlihat jelas, klik tombol di bawah untuk <strong>melewati</strong> verifikasi.</p>
+              <button id="btn-bypass-liveness" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border: none; padding: 14px 40px; border-radius: 50px; font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.5); transition: transform 0.2s ease, box-shadow 0.2s ease; letter-spacing: 0.5px;">✅ Konfirmasi & Lanjutkan</button>
+              <p style="margin:8px 0 0 0; font-size:12px; color:#92400e;">* Tindakan ini akan dicatat sebagai "Bypass Operator" di log sistem.</p>
+            </div>
+          `);
+
+          if (!document.getElementById('bypass-anim-style')) {
+            const style = document.createElement('style');
+            style.id = 'bypass-anim-style';
+            style.textContent = `@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }`;
+            document.head.appendChild(style);
+          }
+
+          const bypassBtn = statusEl.querySelector<HTMLButtonElement>('#btn-bypass-liveness');
+          bypassBtn?.addEventListener('click', () => {
+            log('Operator mengkonfirmasi liveness (bypass). Melanjutkan enrollment...');
+            const bypassContainer = bypassBtn.closest('#bypass-container');
+            if (bypassContainer) bypassContainer.remove();
+            // Abort current in-flight, then restart with bypassLiveness=true
+            enrollAbort?.abort();
+            void (async () => {
+              if (enrollInFlight) {
+                try { await enrollInFlight; } catch { /* expected */ }
+              }
+              bypassLiveness = true;
+              void runEnrollmentFlow(student);
+            })();
+          });
+          return;
+        }
+
         const msg = err instanceof FaceError || err instanceof Error ? err.message : 'Unknown error';
         statusEl.insertAdjacentHTML('beforeend', `<div style="margin-top:8px;color:var(--color-danger);"><strong>✗ Gagal:</strong> ${msg}</div>`);
         log(`ERROR enroll: ${msg}`);
         throw err;
+      } finally {
+        if (!signal.aborted) clearOverlay();
       }
-    } finally {
-      if (instructionOverlay) instructionOverlay.style.display = 'none';
-    }
+    })();
+    enrollInFlight = promise;
+    await promise;
   };
 
   // --- Event Listeners ---

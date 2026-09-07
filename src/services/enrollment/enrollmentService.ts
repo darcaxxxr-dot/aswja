@@ -28,6 +28,8 @@ export interface EnrollmentResult {
 interface StepOptions {
   onStep?: (step: string, msg: string) => void;
   skipLiveness?: boolean;
+  /** AbortSignal to cancel the in-flight liveness/embed loops. */
+  signal?: AbortSignal;
 }
 
 export class EnrollmentService {
@@ -100,7 +102,7 @@ export class EnrollmentService {
 
   async enrollStudentWithFlow(student: Student, video: HTMLVideoElement, options: StepOptions = {}): Promise<EnrollmentResult> {
     await this.ensureCameraAndModel(video);
-    const { onStep, skipLiveness = false } = options;
+    const { onStep, skipLiveness = false, signal } = options;
 
     let livenessOk = false;
     let livenessBypassed = false;
@@ -109,7 +111,7 @@ export class EnrollmentService {
     if (!skipLiveness) {
       onStep?.('liveness', 'Memulai verifikasi liveness...');
       const livenessChallenge = (await settingRepository.get('face.livenessChallenge')) ?? 'blink';
-      
+
       const earThreshold = parseFloat(await settingRepository.get('liveness.earThreshold') ?? '0.22');
       const movementThreshold = parseFloat(await settingRepository.get('liveness.movementThreshold') ?? '0.015');
       const timeoutMs = parseInt(await settingRepository.get('liveness.timeoutMs') ?? '10000', 10);
@@ -118,6 +120,7 @@ export class EnrollmentService {
       const calibFrames = parseInt(await settingRepository.get('liveness.calibrationFrames') ?? '5', 10);
 
       for (let attempt = 1; attempt <= 3; attempt++) {
+        if (signal?.aborted) break;
         onStep?.('liveness', `Verifikasi liveness (percobaan ${attempt}/3)...`);
         try {
           const livenessResult = await livenessService.runChallenge(
@@ -133,8 +136,10 @@ export class EnrollmentService {
               blinkConsecutiveFrames: blinkFrames,
               minOpenFrames: minOpenFrames,
               calibrationFrames: calibFrames,
+              signal
             }
           );
+          if (signal?.aborted) break;
           if (livenessResult.success) {
             livenessOk = true;
             break;
@@ -142,11 +147,16 @@ export class EnrollmentService {
             livenessError = livenessResult.reason ?? 'Liveness gagal';
           }
         } catch (err: unknown) {
+          if (err instanceof DOMException && err.name === 'AbortError') throw err;
           livenessError = err instanceof Error ? err.message : 'Unknown error';
         }
+        if (signal?.aborted) break;
         if (attempt < 3) {
           await new Promise((r) => setTimeout(r, 1500));
         }
+      }
+      if (signal?.aborted) {
+        throw new DOMException('Enrollment dibatalkan.', 'AbortError');
       }
       if (!livenessOk) {
         // FaceError dengan bypassable: true agar UI menampilkan tombol bypass
@@ -167,24 +177,31 @@ export class EnrollmentService {
     let totalQuality = 0;
 
     for (let p = 0; p < poses.length; p++) {
+      if (signal?.aborted) break;
       const pose = poses[p];
       let poseOk = false;
       let bestQuality = 0;
       for (let attempt = 1; attempt <= 3; attempt++) {
+        if (signal?.aborted) break;
         onStep?.(pose, `Pose ${p + 1}/3: ${POSE_LABELS[pose]} (percobaan ${attempt}/3)...`);
         try {
           const sample = await faceEnrollmentService.captureSample(video, pose, {
-            minQualityScore: parseFloat((await settingRepository.get('face.minQualityScore')) ?? '0.4')
+            minQualityScore: parseFloat((await settingRepository.get('face.minQualityScore')) ?? '0.4'),
+            signal
           });
+          if (signal?.aborted) break;
           samples.push({ pose: sample.pose as PoseKey, embedding: sample.embedding, qualityScore: sample.qualityScore });
           totalQuality += sample.qualityScore;
           bestQuality = Math.max(bestQuality, sample.qualityScore);
           poseOk = true;
           break;
-        } catch {
-          if (attempt < 3) {
-            await new Promise((r) => setTimeout(r, 1500));
-          }
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') throw err;
+          // continue to next attempt
+        }
+        if (signal?.aborted) break;
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1500));
         }
       }
       if (!poseOk) {

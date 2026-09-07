@@ -8,9 +8,15 @@ export interface LivenessOptions {
   maxDurationMs?: number;
   movementThreshold?: number;
   blinkEARThreshold?: number;
-  blinkConsecutiveFrames?: number;  // minimum frames with low EAR to consider blink
-  minOpenFrames?: number;           // number of frames eyes must be open before blink
-  calibrationFrames?: number;       // number of initial frames to calibrate for turn
+  blinkConsecutiveFrames?: number;
+  minOpenFrames?: number;
+  calibrationFrames?: number;
+  /**
+   * Optional AbortSignal. When triggered, the liveness check returns
+   * immediately with `success: false` and `reason: 'aborted'`. Useful for
+   * letting the operator skip a slow liveness check.
+   */
+  signal?: AbortSignal;
 }
 
 interface LandmarkSnapshot {
@@ -60,7 +66,7 @@ export class LivenessService {
     calibrationFrames: 5,
   };
 
-  private async getSettings(): Promise<Required<LivenessOptions>> {
+  private async getSettings(): Promise<Required<Omit<LivenessOptions, 'signal'>>> {
     const [ear, movement, duration, blinkFrames, openFrames, calibFrames] = await Promise.all([
       settingRepository.get('liveness.earThreshold'),
       settingRepository.get('liveness.movementThreshold'),
@@ -97,12 +103,23 @@ export class LivenessService {
     const blinkConsecutiveFrames = options.blinkConsecutiveFrames ?? settings.blinkConsecutiveFrames;
     const minOpenFrames = options.minOpenFrames ?? settings.minOpenFrames;
     const calibrationFrames = options.calibrationFrames ?? settings.calibrationFrames;
+    const signal = options.signal;
 
     const startTime = Date.now();
     const detector = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 });
     const snapshots: LandmarkSnapshot[] = [];
     let lastPromptUpdate = 0;
     let stopped = false;
+
+    const checkAborted = (): boolean => {
+      if (signal?.aborted) {
+        stopped = true;
+        return true;
+      }
+      return false;
+    };
+    // Register abort listener so external code can cancel mid-detection.
+    signal?.addEventListener('abort', () => { stopped = true; }, { once: true });
 
     const promptMsg = (msg: string) => {
       const now = Date.now();
@@ -134,7 +151,9 @@ export class LivenessService {
     let refNoseY = 0;
 
     while (!stopped && Date.now() - startTime < maxDurationMs) {
+      if (checkAborted()) break;
       const detection = await faceapi.detectSingleFace(video, detector).withFaceLandmarks();
+      if (checkAborted()) break;
       if (!detection) {
         promptMsg('Wajah tidak terdeteksi, posisikan wajah di tengah kamera.');
         await this.sleep(150);
@@ -231,6 +250,9 @@ export class LivenessService {
     }
 
     const durationMs = Date.now() - startTime;
+    if (signal?.aborted) {
+      return { success: false, challenge, durationMs, reason: 'aborted' };
+    }
     if (!stopped) {
       return {
         success: false,

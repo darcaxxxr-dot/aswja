@@ -20,6 +20,11 @@ export interface EnrollmentProgressListener {
 export interface EnrollmentOptions {
   minQualityScore?: number;
   sampleCount?: number;
+  /**
+   * Optional AbortSignal. When triggered, captureSample / enroll throws
+   * an AbortError so the caller can stop mid-enrollment.
+   */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_SAMPLE_COUNT = 5;
@@ -44,10 +49,16 @@ export class FaceEnrollmentService {
     pose: EnrollmentPose,
     options: EnrollmentOptions = {}
   ): Promise<EnrollmentSample> {
+    if (options.signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     await faceModelLoader.load();
     const minQualityScore = options.minQualityScore ?? 0.4;
 
     const result = await faceEmbeddingService.computeFromVideo(video);
+    if (options.signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     if (!result) {
       throw new FaceError(`Tidak ada wajah terdeteksi untuk pose "${pose}".`);
     }
