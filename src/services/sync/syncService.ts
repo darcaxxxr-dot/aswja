@@ -59,49 +59,115 @@ type TableRowMap = {
   attendanceRecords: AttendanceRecord;
 };
 
-function camelToSnake(str: string): string {
-  // Converts camelCase to snake_case
-  return str.replace(/[A-Z]/g, (letter, index) => (index === 0 ? letter.toLowerCase() : '_' + letter.toLowerCase()));
+// ===== PERBAIKAN: Mapping per tabel =====
+function getCloudColumns(table: TableKey): string[] {
+  switch (table) {
+    case 'schools':
+      return ['id', 'name', 'created_at'];
+    case 'academicYears':
+      return ['id', 'name', 'school_id', 'start_date', 'end_date', 'is_active', 'created_at'];
+    case 'classes':
+      return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at'];
+    case 'students':
+      return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at'];
+    case 'faceProfiles':
+      return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at'];
+    case 'attendanceSessions':
+      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'created_by', 'created_at'];
+    case 'attendanceRecords':
+      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_at'];
+    default:
+      return [];
+  }
 }
 
 function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...row };
-  // Convert camelCase keys to snake_case for Supabase compatibility
-  const camelKeys = Object.keys(out) as string[];
-  for (const key of camelKeys) {
-    const snakeKey = camelToSnake(key);
-    if (snakeKey !== key) {
-      out[snakeKey] = out[key];
-      // Remove camelCase key to avoid duplication
-      delete out[key];
+  const out: Record<string, unknown> = {};
+
+  switch (table) {
+    case 'schools': {
+      const r = row as School;
+      out.id = r.id;
+      out.name = r.name;
+      out.created_at = new Date(r.createdAt).toISOString();
+      break;
+    }
+    case 'academicYears': {
+      const r = row as AcademicYear;
+      out.id = r.id;
+      out.name = r.name;
+      out.school_id = r.schoolId;
+      out.start_date = r.startDate;
+      out.end_date = r.endDate;
+      out.is_active = r.isActive;
+      out.created_at = new Date(r.createdAt).toISOString();
+      break;
+    }
+    case 'classes': {
+      const r = row as ClassRoom;
+      out.id = r.id;
+      out.school_id = r.schoolId;
+      out.academic_year_id = r.academicYearId;
+      out.grade = r.grade;
+      out.name = r.name;
+      out.created_at = new Date(r.createdAt).toISOString();
+      break;
+    }
+    case 'students': {
+      const r = row as Student;
+      out.id = r.id;
+      out.school_id = r.schoolId;
+      out.nis = r.nis;
+      out.nisn = r.nisn;
+      out.name = r.name;
+      out.gender = r.gender;
+      out.class_id = r.classId;
+      out.status = r.status;
+      out.created_at = new Date(r.createdAt).toISOString();
+      break;
+    }
+    case 'faceProfiles': {
+      const r = row as FaceProfile;
+      out.id = r.id;
+      out.student_id = r.studentId;
+      out.embedding = Array.isArray(r.embedding) && r.embedding.every((e) => Array.isArray(e)) ? r.embedding : [];
+      out.model_version = r.modelVersion;
+      out.quality_score = r.qualityScore;
+      out.created_at = new Date(r.createdAt).toISOString();
+      break;
+    }
+    case 'attendanceSessions': {
+      const r = row as AttendanceSession;
+      out.id = r.id;
+      out.school_id = r.schoolId;
+      out.class_id = r.classId;
+      out.date = r.date;
+      out.start_time = new Date(r.startTime).toISOString();
+      if (r.endTime) out.end_time = new Date(r.endTime).toISOString();
+      out.status = r.status;
+      out.created_by = r.createdBy;
+      out.created_at = new Date(r.createdAt).toISOString();
+      break;
+    }
+    case 'attendanceRecords': {
+      const r = row as AttendanceRecord;
+      out.id = r.id;
+      out.school_id = r.schoolId;
+      out.session_id = r.sessionId;
+      out.student_id = r.studentId;
+      out.timestamp = new Date(r.timestamp).toISOString();
+      out.status = r.status;
+      out.confidence = r.confidence;
+      out.device_id = r.deviceId;
+      out.created_at = new Date(r.createdAt).toISOString();
+      break;
     }
   }
 
-  if (table === 'faceProfiles') {
-    const fp = row as FaceProfile;
-    out.embedding = Array.isArray(fp.embedding) && fp.embedding.every((e) => Array.isArray(e)) ? fp.embedding : [];
-  }
-  if (table === 'attendanceRecords') {
-    const ar = row as AttendanceRecord;
-    out.timestamp = new Date(ar.timestamp).toISOString();
-    out.created_at = new Date(ar.createdAt).toISOString();
-  } else if (table === 'attendanceSessions') {
-    const s = row as AttendanceSession;
-    out.start_time = new Date(s.startTime).toISOString();
-    if (s.endTime) out.end_time = new Date(s.endTime).toISOString();
-    out.date = typeof s.date === 'string' ? s.date : new Date(s.date).toISOString().slice(0, 10);
-    out.created_at = new Date(s.createdAt).toISOString();
-  } else {
-    out.created_at = new Date(row.createdAt).toISOString();
-    if ('updatedAt' in row && row.updatedAt) {
-      out.updated_at = new Date(row.updatedAt).toISOString();
-    }
-  }
   return out;
 }
 
 function snakeToCamel(str: string): string {
-  // Converts snake_case to camelCase
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
@@ -109,7 +175,6 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
   if (!raw.id) return null;
   const id = String(raw.id);
   const createdAt = raw.created_at ? new Date(String(raw.created_at)).getTime() : Date.now();
-  const updatedAt = raw.updated_at ? new Date(String(raw.updated_at)).getTime() : Date.now();
 
   // Convert snake_case keys in raw to camelCase for local type compatibility
   const processed: Record<string, unknown> = {};
@@ -156,7 +221,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       modelVersion: f.modelVersion ?? 'unknown',
       qualityScore: Number(f.qualityScore ?? 0),
       createdAt,
-      updatedAt
+      updatedAt: createdAt
     } as unknown as T;
   }
 
@@ -172,13 +237,12 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       classId: s.classId,
       status: (s.status as Student['status']) ?? 'active',
       createdAt,
-      updatedAt
+      updatedAt: createdAt
     } as unknown as T;
   }
 
   if (table === 'classes') {
     const c = processed as Record<string, unknown> & { name: string; grade: string; academicYearId: string };
-    // Try to get academicYearId from both possible keys (snake_case from DB)
     const academicYearId = c.academic_year_id ?? c.academicYearId ?? '';
     return {
       id,
@@ -187,7 +251,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       grade: c.grade,
       academicYearId: String(academicYearId),
       createdAt,
-      updatedAt
+      updatedAt: createdAt
     } as unknown as T;
   }
 
@@ -210,7 +274,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       id,
       name: sh.name,
       createdAt,
-      updatedAt
+      updatedAt: createdAt
     } as unknown as T;
   }
 
@@ -263,19 +327,22 @@ export class SyncService {
       // Filter rows that belong to this school
       let schoolRows: TableRowMap[TableKey][];
       if (t.local === 'schools') {
-        // Schools: push all (root entity)
         schoolRows = all;
       } else if (t.local === 'faceProfiles') {
-        // FaceProfiles: filter by student's schoolId
         schoolRows = all.filter((r) => {
           const fp = r as FaceProfile;
           return studentSchoolMap.get(fp.studentId) === schoolId;
         });
       } else {
-        // All other tables: filter by direct schoolId field
         schoolRows = all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId);
       }
 
+      if (schoolRows.length === 0) {
+        result[t.cloud] = 0;
+        continue;
+      }
+
+      // Konversi ke cloud rows
       const cloudRows = schoolRows.map((r) => {
         const row = toCloudRow(t.local, r);
         // Inject school_id into face_profiles cloud row
@@ -286,11 +353,21 @@ export class SyncService {
         return row;
       });
 
-      const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[]);
-      if (errors.length > 0) {
-        throw new SupabaseError(`Push ${t.cloud}: ${errors.join('; ')}`);
+      // Dapatkan kolom yang valid untuk tabel ini
+      const columns = getCloudColumns(t.local);
+
+      try {
+        const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
+        if (errors.length > 0) {
+          console.warn(`[sync] Push ${t.cloud} errors:`, errors);
+        }
+        result[t.cloud] = inserted;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[sync] Push ${t.cloud} failed: ${msg}`);
+        result[t.cloud] = 0;
+        // Lanjut ke tabel berikutnya, jangan throw agar sync tabel lain tetap berjalan
       }
-      result[t.cloud] = inserted;
     }
     return result;
   }
@@ -302,17 +379,26 @@ export class SyncService {
     const result: Record<string, number> = {};
 
     for (const t of PULL_TABLES) {
-      const { data, error } = await cloudSelect(t.cloud, schoolId, sinceIso);
-      if (error) throw new SupabaseError(`Pull ${t.cloud}: ${error}`);
-      const rows = (data ?? []) as Record<string, unknown>[];
-      const localRows = rows
-        .map((r) => fromCloudRow<TableRowMap[TableKey]>(t.local, r))
-        .filter((r): r is TableRowMap[TableKey] => r !== null);
-      if (localRows.length > 0) {
-        const tableRef = db[t.local] as unknown as { bulkPut: (rows: unknown[]) => Promise<unknown> };
-        await tableRef.bulkPut(localRows);
+      try {
+        const { data, error } = await cloudSelect(t.cloud, schoolId, sinceIso);
+        if (error) {
+          console.warn(`[sync] Pull ${t.cloud} error:`, error);
+          continue;
+        }
+        const rows = (data ?? []) as Record<string, unknown>[];
+        const localRows = rows
+          .map((r) => fromCloudRow<TableRowMap[TableKey]>(t.local, r))
+          .filter((r): r is TableRowMap[TableKey] => r !== null);
+        if (localRows.length > 0) {
+          const tableRef = db[t.local] as unknown as { bulkPut: (rows: unknown[]) => Promise<unknown> };
+          await tableRef.bulkPut(localRows);
+        }
+        result[t.cloud] = localRows.length;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[sync] Pull ${t.cloud} failed: ${msg}`);
+        // Continue with other tables
       }
-      result[t.cloud] = localRows.length;
     }
     return result;
   }
@@ -345,7 +431,6 @@ export class SyncService {
       };
     }
 
-    // Allow sync without authentication - use schoolId for RLS
     const schoolId = getOrCreateSchoolId();
     if (!schoolId) {
       return {

@@ -135,7 +135,8 @@ export interface CloudRow {
 
 export async function cloudUpsert<T extends CloudRow>(
   table: string,
-  rows: T[]
+  rows: T[],
+  columns?: string[]
 ): Promise<{ inserted: number; errors: string[] }> {
   const client = getSupabaseClient();
   if (!client) return { inserted: 0, errors: ['Supabase client not configured'] };
@@ -144,9 +145,20 @@ export async function cloudUpsert<T extends CloudRow>(
   const BATCH = 100;
   let inserted = 0;
   const errors: string[] = [];
+
   for (let i = 0; i < rows.length; i += BATCH) {
     const batch = rows.slice(i, i + BATCH);
-    const { data, error } = await client.from(table).upsert(batch, { onConflict: 'id' }).select('id');
+    const filteredBatch = columns
+      ? batch.map((row) => {
+          const filtered: Record<string, unknown> = {};
+          for (const col of columns) {
+            if (col in row) filtered[col] = row[col];
+          }
+          return filtered as T;
+        })
+      : batch;
+
+    const { data, error } = await client.from(table).upsert(filteredBatch, { onConflict: 'id' }).select('id');
     if (error) {
       errors.push(`Batch ${i}-${i + batch.length}: ${error.message}`);
     } else {

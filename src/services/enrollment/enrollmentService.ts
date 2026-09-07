@@ -1,7 +1,6 @@
 import { cameraService } from '@services/camera';
 import { faceEnrollmentService, faceRecognitionService, faceModelLoader, livenessService, type EnrollmentPose } from '@services/face';
-import { studentRepository, faceProfileRepository } from '@repositories/index';
-import { settingRepository } from '@repositories/index';
+import { studentRepository, faceProfileRepository, settingRepository } from '@repositories/index';
 import type { FaceProfile, Student } from '@models/types';
 import { FaceError } from '@services/face';
 
@@ -23,10 +22,12 @@ export interface EnrollmentResult {
   profiles: FaceProfile[];
   samples: Array<{ pose: EnrollmentPose; qualityScore: number }>;
   avgQuality: number;
+  livenessBypassed?: boolean;
 }
 
 interface StepOptions {
   onStep?: (step: string, msg: string) => void;
+  skipLiveness?: boolean;
 }
 
 export class EnrollmentService {
@@ -99,32 +100,67 @@ export class EnrollmentService {
 
   async enrollStudentWithFlow(student: Student, video: HTMLVideoElement, options: StepOptions = {}): Promise<EnrollmentResult> {
     await this.ensureCameraAndModel(video);
-    const { onStep } = options;
+    const { onStep, skipLiveness = false } = options;
 
-    onStep?.('liveness', 'Memulai verifikasi liveness...');
-    const livenessChallenge = (await settingRepository.get('face.livenessChallenge')) ?? 'blink';
     let livenessOk = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      onStep?.('liveness', `Verifikasi liveness (percobaan ${attempt}/3)...`);
-      try {
-        const livenessResult = await livenessService.runChallenge(video, livenessChallenge as 'blink' | 'turn_left' | 'turn_right', (msg) => {
-          onStep?.('liveness', msg);
-        });
-        if (livenessResult.success) {
-          livenessOk = true;
-          break;
+    let livenessBypassed = false;
+    let livenessError = '';
+
+    if (!skipLiveness) {
+      onStep?.('liveness', 'Memulai verifikasi liveness...');
+      const livenessChallenge = (await settingRepository.get('face.livenessChallenge')) ?? 'blink';
+      
+      const earThreshold = parseFloat(await settingRepository.get('liveness.earThreshold') ?? '0.22');
+      const movementThreshold = parseFloat(await settingRepository.get('liveness.movementThreshold') ?? '0.015');
+      const timeoutMs = parseInt(await settingRepository.get('liveness.timeoutMs') ?? '10000', 10);
+      const blinkFrames = parseInt(await settingRepository.get('liveness.blinkConsecutiveFrames') ?? '2', 10);
+      const minOpenFrames = parseInt(await settingRepository.get('liveness.minOpenFrames') ?? '3', 10);
+      const calibFrames = parseInt(await settingRepository.get('liveness.calibrationFrames') ?? '5', 10);
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        onStep?.('liveness', `Verifikasi liveness (percobaan ${attempt}/3)...`);
+        try {
+          const livenessResult = await livenessService.runChallenge(
+            video,
+            livenessChallenge as 'blink' | 'turn_left' | 'turn_right',
+            (msg) => {
+              onStep?.('liveness', msg);
+            },
+            {
+              blinkEARThreshold: earThreshold,
+              movementThreshold: movementThreshold,
+              maxDurationMs: timeoutMs,
+              blinkConsecutiveFrames: blinkFrames,
+              minOpenFrames: minOpenFrames,
+              calibrationFrames: calibFrames,
+            }
+          );
+          if (livenessResult.success) {
+            livenessOk = true;
+            break;
+          } else {
+            livenessError = livenessResult.reason ?? 'Liveness gagal';
+          }
+        } catch (err: unknown) {
+          livenessError = err instanceof Error ? err.message : 'Unknown error';
         }
-      } catch {
-        // continue to next retry
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1500));
+        }
       }
-      if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 1500));
+      if (!livenessOk) {
+        // ===== INI KUNCI: Tambahkan bypassable =====
+        const error = new FaceError(`Liveness gagal setelah 3 percobaan. ${livenessError}`);
+        (error as any).bypassable = true;
+        console.log('[DEBUG] Throwing bypassable error:', error);
+        throw error;
       }
-    }
-    if (!livenessOk) {
-      throw new FaceError('Liveness gagal setelah 3 percobaan. Pastikan wajah terlihat jelas dan lakukan tantangan sesuai instruksi.');
+    } else {
+      livenessBypassed = true;
+      onStep?.('liveness', 'Liveness dilewati (bypass operator).');
     }
 
+    // Capture poses
     const poses: PoseKey[] = ['front', 'right', 'left'];
     const samples: Array<{ pose: PoseKey; embedding: number[]; qualityScore: number }> = [];
     let totalQuality = 0;
@@ -165,7 +201,8 @@ export class EnrollmentService {
       studentId: student.id,
       profiles,
       samples: samples.map((s) => ({ pose: s.pose, qualityScore: s.qualityScore })),
-      avgQuality
+      avgQuality,
+      livenessBypassed: livenessBypassed || false
     };
   }
 
