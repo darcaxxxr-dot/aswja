@@ -69,9 +69,9 @@ export class Router {
     const route = this.routes.find((r) => r.pattern.test(path));
     this.currentRoute = route ?? null;
     if (route?.title) {
-      document.title = `${route.title} · SmartFace Attendance`;
+      document.title = `${route.title} · ASWJA`;
     } else {
-      document.title = 'SmartFace Attendance';
+      document.title = 'ASWJA';
     }
     if (route) {
       const match = path.match(route.pattern);

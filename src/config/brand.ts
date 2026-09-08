@@ -33,7 +33,7 @@ export const BRAND: BrandConfig = {
   fullName: 'ASWJA - Absensi Sholat Wajib Berjamaah',
   tagline: 'Absensi Sholat Wajib Berjamaah',
   description: 'ASWJA - Absensi Sholat Wajib Berjamaah MAN IC Kota Palangkaraya',
-  icon: '/icons/icon.svg',
+  icon: '/icons/icon-192.png',
   favicon: '/icons/favicon-32.png',
   appleTouchIcon: '/icons/apple-touch-icon.png',
   maskableIcon: '/icons/icon-maskable-512.png',

@@ -1,5 +1,5 @@
 export const APP_CONFIG = {
-  appName: 'SmartFace Attendance',
+  appName: 'ASWJA',
   version: '0.1.0',
   deviceIdKey: 'sf_device_id',
   schoolIdKey: 'sf_school_id',

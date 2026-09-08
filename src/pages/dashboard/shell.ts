@@ -62,7 +62,10 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
         <label for="nav-toggle" class="hamburger" aria-label="Buka menu">
           <span></span><span></span><span></span>
         </label>
-        <h1 class="app-title">SmartFace Attendance</h1>
+        <h1 class="app-title">
+          <img src="/icons/icon-192.png" alt="ASWJA" class="app-logo" style="height:28px;width:auto;margin-right:8px;vertical-align:middle;border-radius:6px;" />
+          ASWJA
+        </h1>
         <div class="header-right">
           ${offlineBadge}${syncBadge}${userBadge}${installBtn}
         </div>
@@ -616,15 +619,15 @@ async function showScanModal() {
   const root = ensureQrModalContainer();
   root.innerHTML = `
     <div style="position:fixed;inset:0;background:rgba(15,23,42,0.92);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(6px);">
-      <div style="background:#fff;color:#0f172a;border-radius:16px;padding:20px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);position:relative;">
+      <div style="background:#fff;color:#0f172a;border-radius:16px;padding:20px;max-width:90vw;max-width:500px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);position:relative;">
         <button id="qr-close" style="position:absolute;top:8px;right:8px;background:transparent;border:none;font-size:24px;cursor:pointer;color:#64748b;line-height:1;padding:4px 8px;">&times;</button>
         <div style="font-size:14px;color:#64748b;margin-bottom:6px;">📷 PINDAI QR</div>
         <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Arahkan kamera ke QR device lain</h3>
-        <div id="qr-scanner-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3;">
+        <div id="qr-scanner-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:1/1;">
           <div id="qr-scanner-el" style="width:100%;height:100%;"></div>
           <div id="qr-scanner-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.7);font-size:13px;background:rgba(0,0,0,0.4);">Meminta izin kamera...</div>
         </div>
-        <div id="qr-scan-info" style="margin-top:10px;font-size:12px;color:#475569;line-height:1.5;text-align:center;">Posisikan QR di tengah frame</div>
+        <div id="qr-scan-info" style="margin-top:10px;font-size:12px;color:#475569;line-height:1.5;text-align:center;">Posisikan QR di tengah frame persegi</div>
         <div id="qr-scan-error" style="margin-top:6px;font-size:12px;color:#dc2626;line-height:1.4;text-align:center;display:none;"></div>
       </div>
     </div>
