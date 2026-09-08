@@ -27,27 +27,27 @@ export class SmartFaceDB extends Dexie {
   constructor() {
     super('smartface_attendance');
 
-    this.version(2).stores({
-      schools: 'id, name, createdAt',
-      academicYears: 'id, schoolId, name, isActive, startDate, endDate, createdAt, updatedAt',
-      classes: 'id, schoolId, academicYearId, grade, name, createdAt, [schoolId+grade+name]',
-      students: 'id, schoolId, nis, classId, status, name, createdAt, [schoolId+classId], [schoolId+nis]',
-      faceProfiles: 'id, studentId, modelVersion, createdAt',
-      attendanceSessions: 'id, schoolId, classId, date, status, createdAt, [schoolId+classId+date]',
-      attendanceRecords: 'id, schoolId, sessionId, studentId, status, timestamp, [sessionId+studentId], [sessionId+timestamp]',
-      users: 'id, schoolId, username, role, createdAt, [schoolId+username]',
-      settings: 'key, updatedAt',
-      syncQueue: 'id, entity, operation, status, createdAt, [entity+status]'
-    });
-
-    // v3: Tambah deletedAt index untuk soft-delete sync
-    this.version(3).stores({
+    this.version(4).stores({
       schools: 'id, name, createdAt, deletedAt',
       academicYears: 'id, schoolId, name, isActive, startDate, endDate, createdAt, updatedAt, deletedAt',
       classes: 'id, schoolId, academicYearId, grade, name, createdAt, deletedAt, [schoolId+grade+name]',
       students: 'id, schoolId, nis, classId, status, name, createdAt, deletedAt, [schoolId+classId], [schoolId+nis]',
       faceProfiles: 'id, studentId, modelVersion, createdAt, deletedAt',
       attendanceSessions: 'id, schoolId, classId, date, status, createdAt, deletedAt, [schoolId+classId+date]',
+      attendanceRecords: 'id, schoolId, sessionId, studentId, status, timestamp, deletedAt, [sessionId+studentId], [sessionId+timestamp]',
+      users: 'id, schoolId, username, role, createdAt, deletedAt, [schoolId+username]',
+      settings: 'key, updatedAt',
+      syncQueue: 'id, entity, operation, status, createdAt, [entity+status]'
+    });
+
+    // v5: Add prayer attendance support - sessionType and prayerName columns
+    this.version(5).stores({
+      schools: 'id, name, createdAt, deletedAt',
+      academicYears: 'id, schoolId, name, isActive, startDate, endDate, createdAt, updatedAt, deletedAt',
+      classes: 'id, schoolId, academicYearId, grade, name, createdAt, deletedAt, [schoolId+grade+name]',
+      students: 'id, schoolId, nis, classId, status, name, createdAt, deletedAt, [schoolId+classId], [schoolId+nis]',
+      faceProfiles: 'id, studentId, modelVersion, createdAt, deletedAt',
+      attendanceSessions: 'id, schoolId, classId, date, status, createdAt, deletedAt, sessionType, prayerName, [schoolId+classId+date+sessionType+prayerName]',
       attendanceRecords: 'id, schoolId, sessionId, studentId, status, timestamp, deletedAt, [sessionId+studentId], [sessionId+timestamp]',
       users: 'id, schoolId, username, role, createdAt, deletedAt, [schoolId+username]',
       settings: 'key, updatedAt',
@@ -110,18 +110,7 @@ export class SmartFaceDB extends Dexie {
   }
 
   async counts(): Promise<Record<string, number>> {
-    const [
-      schools,
-      academicYears,
-      classes,
-      students,
-      faceProfiles,
-      attendanceSessions,
-      attendanceRecords,
-      users,
-      settings,
-      syncQueue
-    ] = await Promise.all([
+    const [schools, academicYears, classes, students, faceProfiles, attendanceSessions, attendanceRecords, users, settings, syncQueue] = await Promise.all([
       this.schools.count(),
       this.academicYears.count(),
       this.classes.count(),

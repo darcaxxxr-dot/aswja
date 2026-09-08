@@ -9,6 +9,7 @@ import { formatTime, setSchoolIdOverride, clearSchoolIdOverride, isValidUuid } f
 const SECTIONS: Array<{ key: keyof AppSettings; label: string; desc: string }> = [
   { key: 'schoolName', label: 'Nama Sekolah', desc: 'Ditampilkan di header & laporan.' },
   { key: 'attendance', label: 'Aturan Absensi', desc: 'Window HADIR / TERLAMBAT + liveness.' },
+  { key: 'prayer', label: 'Aturan Shalat', desc: 'Window HADIR / TERLAMBAT / TUTUP per sholat.' },
   { key: 'face', label: 'Pengenalan Wajah', desc: 'Threshold & model version.' },
   { key: 'sound', label: 'Sound Effects', desc: 'Toggle suara enrollment & absensi.' },
   { key: 'sync', label: 'Sinkronisasi', desc: 'Auto-sync ke Supabase.' },
@@ -93,7 +94,7 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
 
         <section class="card stack" id="section-face">
           <h3 style="margin:0;">Face Recognition</h3>
-          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[2].desc}</p>
+          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[3].desc}</p>
           <div class="row" style="flex-wrap:wrap;gap:8px;">
             <label class="row" style="gap:6px;">Threshold:
               <input id="cfg-threshold" type="range" min="0.5" max="1.0" step="0.01" value="${s.face.threshold}" style="width:160px;" />
@@ -109,9 +110,40 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
           </div>
         </section>
 
+        <section class="card stack" id="section-prayer">
+          <h3 style="margin:0;">Aturan Shalat</h3>
+          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[2].desc}</p>
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <label class="row" style="gap:6px;">Subuh (Hadir sampai): <input id="cfg-p-subuh-ontime" type="time" value="${s.prayer.subuh.onTimeUntil}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Subuh (Terlambat setelah): <input id="cfg-p-subuh-late" type="time" value="${s.prayer.subuh.lateAfter}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Subuh (Tutup pada): <input id="cfg-p-subuh-close" type="time" value="${s.prayer.subuh.closeAt}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <label class="row" style="gap:6px;">Dhuhr (Hadir sampai): <input id="cfg-p-dhuhr-ontime" type="time" value="${s.prayer.dhuhr.onTimeUntil}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Dhuhr (Terlambat setelah): <input id="cfg-p-dhuhr-late" type="time" value="${s.prayer.dhuhr.lateAfter}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Dhuhr (Tutup pada): <input id="cfg-p-dhuhr-close" type="time" value="${s.prayer.dhuhr.closeAt}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <label class="row" style="gap:6px;">Ashar (Hadir sampai): <input id="cfg-p-ashar-ontime" type="time" value="${s.prayer.ashar.onTimeUntil}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Ashar (Terlambat setelah): <input id="cfg-p-ashar-late" type="time" value="${s.prayer.ashar.lateAfter}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Ashar (Tutup pada): <input id="cfg-p-ashar-close" type="time" value="${s.prayer.ashar.closeAt}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <label class="row" style="gap:6px;">Maghrib (Hadir sampai): <input id="cfg-p-maghrib-ontime" type="time" value="${s.prayer.maghrib.onTimeUntil}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Maghrib (Terlambat setelah): <input id="cfg-p-maghrib-late" type="time" value="${s.prayer.maghrib.lateAfter}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Maghrib (Tutup pada): <input id="cfg-p-maghrib-close" type="time" value="${s.prayer.maghrib.closeAt}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <label class="row" style="gap:6px;">Isya (Hadir sampai): <input id="cfg-p-isya-ontime" type="time" value="${s.prayer.isya.onTimeUntil}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Isya (Terlambat setelah): <input id="cfg-p-isya-late" type="time" value="${s.prayer.isya.lateAfter}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+            <label class="row" style="gap:6px;">Isya (Tutup pada): <input id="cfg-p-isya-close" type="time" value="${s.prayer.isya.closeAt}" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
+          </div>
+          <button class="btn btn-primary" id="btn-save-prayer">Simpan Aturan Shalat</button>
+        </section>
+
         <section class="card stack" id="section-sound">
           <h3 style="margin:0;">Sound Effects</h3>
-          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[3].desc}</p>
+          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[4].desc}</p>
           <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;">
             <label class="row" style="gap:6px;flex:1;min-width:240px;">
               <input id="cfg-sound-enabled" type="checkbox" ${s.sound?.enabled !== false ? 'checked' : ''} />
@@ -132,7 +164,7 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
 
         <section class="card stack" id="section-sync">
           <h3 style="margin:0;">Sinkronisasi</h3>
-          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[3].desc}</p>
+          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[5].desc}</p>
           <div class="row" style="flex-wrap:wrap;gap:8px;">
             <label class="row" style="gap:6px;">
               <input id="cfg-auto" type="checkbox" ${s.sync.autoEnabled ? 'checked' : ''} />
@@ -152,7 +184,7 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
 
         <section class="card stack" id="section-supabase">
           <h3 style="margin:0;">Supabase Connection</h3>
-          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[4].desc}</p>
+          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[6].desc}</p>
           ${s.supabase.isConfigured
             ? `<div class="muted" style="font-size:13px;">Status: <strong style="color:var(--color-success);">✓ Connected</strong> (${s.supabase.source}) · URL: <code>${escapeHtml(s.supabase.url)}</code> · Key: <code>****${escapeHtml(s.supabase.keyLast4)}</code></div>`
             : `<div class="muted" style="font-size:13px;">Status: <strong style="color:var(--color-warn);">⚠ Not configured</strong>. Set <code>VITE_SUPABASE_URL</code> & <code>VITE_SUPABASE_ANON_KEY</code> di <code>.env</code> atau environment Vercel.</div>`
@@ -237,9 +269,43 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
 
     root.querySelector<HTMLButtonElement>('#btn-clear-override')?.addEventListener('click', async () => {
       clearSchoolIdOverride();
-      log('Override dihapus. Pakai school ID auto-generated.');
-      await refresh();
-    });
+        log('Override dihapus. Pakai school ID auto-generated.');
+        await refresh();
+      });
+
+      root.querySelector<HTMLButtonElement>('#btn-save-prayer')?.addEventListener('click', async () => {
+        await settingsService.save({
+          prayer: {
+            subuh: {
+              onTimeUntil: root.querySelector<HTMLInputElement>('#cfg-p-subuh-ontime')!.value,
+              lateAfter: root.querySelector<HTMLInputElement>('#cfg-p-subuh-late')!.value,
+              closeAt: root.querySelector<HTMLInputElement>('#cfg-p-subuh-close')!.value
+            },
+            dhuhr: {
+              onTimeUntil: root.querySelector<HTMLInputElement>('#cfg-p-dhuhr-ontime')!.value,
+              lateAfter: root.querySelector<HTMLInputElement>('#cfg-p-dhuhr-late')!.value,
+              closeAt: root.querySelector<HTMLInputElement>('#cfg-p-dhuhr-close')!.value
+            },
+            ashar: {
+              onTimeUntil: root.querySelector<HTMLInputElement>('#cfg-p-ashar-ontime')!.value,
+              lateAfter: root.querySelector<HTMLInputElement>('#cfg-p-ashar-late')!.value,
+              closeAt: root.querySelector<HTMLInputElement>('#cfg-p-ashar-close')!.value
+            },
+            maghrib: {
+              onTimeUntil: root.querySelector<HTMLInputElement>('#cfg-p-maghrib-ontime')!.value,
+              lateAfter: root.querySelector<HTMLInputElement>('#cfg-p-maghrib-late')!.value,
+              closeAt: root.querySelector<HTMLInputElement>('#cfg-p-maghrib-close')!.value
+            },
+            isya: {
+              onTimeUntil: root.querySelector<HTMLInputElement>('#cfg-p-isya-ontime')!.value,
+              lateAfter: root.querySelector<HTMLInputElement>('#cfg-p-isya-late')!.value,
+              closeAt: root.querySelector<HTMLInputElement>('#cfg-p-isya-close')!.value
+            }
+          }
+        });
+        log('Aturan shalat disimpan.');
+        await refresh();
+      });
 
     root.querySelector<HTMLButtonElement>('#btn-save-attendance')?.addEventListener('click', async () => {
       await settingsService.save({

@@ -35,7 +35,32 @@ end$$;
 create index if not exists idx_schools_parent on public.schools(school_id);
 
 -- ============================================
--- 3. ENABLE RLS FOR ALL SYNC TABLES
+-- 3. TAMBAH session_type & prayer_name KE attendance_sessions TABLE
+-- ============================================
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'attendance_sessions' and column_name = 'session_type'
+  ) then
+    alter table public.attendance_sessions add column session_type text not null default 'CLASS';
+  end if;
+end$$;
+
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'attendance_sessions' and column_name = 'prayer_name'
+  ) then
+    alter table public.attendance_sessions add column prayer_name text;
+  end if;
+end$$;
+
+create index if not exists idx_attendance_sessions_session_type on public.attendance_sessions(session_type);
+
+-- ============================================
+-- 4. ENABLE RLS FOR ALL SYNC TABLES
 -- ============================================
 alter table public.schools enable row level security;
 alter table public.academic_years enable row level security;

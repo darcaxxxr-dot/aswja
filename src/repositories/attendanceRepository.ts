@@ -5,7 +5,9 @@ import type {
   AttendanceRecord,
   AttendanceSession,
   AttendanceStatus,
-  SessionStatus
+  SessionStatus,
+  SessionType,
+  PrayerName
 } from '@models/types';
 
 /** Fire-and-forget push to Supabase after local write */
@@ -16,6 +18,8 @@ function pushAsync(): void {
 export interface CreateSessionInput {
   classId: string;
   date: string;
+  sessionType: SessionType;
+  prayerName?: PrayerName;
   startTime?: number;
   createdBy: string;
 }
@@ -28,7 +32,26 @@ export interface RecordAttendanceInput {
   confidence: number;
 }
 
+/**
+ * PRAYER SESSION HELPERS
+ * -------------------------------------------------------
+ * Prayer sessions differ from class sessions:
+ * - classId is not required (prayer is school-wide, not class-specific)
+ * - prayerName specifies which prayer
+ * - No startTime/endTime concept the same way (or use prayer times)
+ * - sessionType = 'PRAYER'
+ */
+
 export class AttendanceRepository {
+  /** Prayer times config (can be moved to settings later) */
+  static PRAYER_TIMES: Record<'SUBUH' | 'DHUHUR' | 'ASHAR' | 'MAGHRIB' | 'ISYA', { hours: number; minutes: number }> = {
+    SUBUH: { hours: 4, minutes: 30 },
+    DHUHUR: { hours: 12, minutes: 0 },
+    ASHAR: { hours: 15, minutes: 0 },
+    MAGHRIB: { hours: 18, minutes: 0 },
+    ISYA: { hours: 19, minutes: 0 }
+  };
+
   async listSessions(): Promise<AttendanceSession[]> {
     return db.attendanceSessions.orderBy('createdAt').reverse().toArray();
   }
@@ -37,7 +60,22 @@ export class AttendanceRepository {
     return db.attendanceSessions.get(id);
   }
 
-  async listSessionsByClass(classId: string, date?: string): Promise<AttendanceSession[]> {
+  async listSessionsByClass(classId: string, date?: string, sessionType?: SessionType): Promise<AttendanceSession[]> {
+    if (sessionType === 'PRAYER') {
+      // Prayer sessions: search by schoolId + date + sessionType + prayerName (if specified)
+      if (date) {
+        return db.attendanceSessions
+          .where('[schoolId+date+sessionType+prayerName]')
+          .between([getOrCreateSchoolId(), date, 'CLASS', ''], [getOrCreateSchoolId(), date, 'PRAYER', '\uffff'])
+          .toArray();
+      }
+      return db.attendanceSessions
+        .where('sessionType')
+        .equals('PRAYER')
+        .and((s: AttendanceSession) => s.date === date)
+        .toArray();
+    }
+    // Original class session logic
     if (date) {
       return db.attendanceSessions
         .where('[schoolId+classId+date]')
@@ -55,7 +93,9 @@ export class AttendanceRepository {
       classId: input.classId,
       date: input.date,
       startTime: input.startTime ?? ts,
-      status: 'open',
+      status: 'open' as SessionStatus,
+      sessionType: input.sessionType,
+      prayerName: input.prayerName,
       createdBy: input.createdBy,
       createdAt: ts
     };
@@ -125,6 +165,78 @@ export class AttendanceRepository {
 
   async removeRecord(id: string): Promise<void> {
     await db.attendanceRecords.delete(id);
+  }
+
+  /** NEW: Create a prayer session for a specific prayer */
+  async createPrayerSession(
+    date: string,
+    prayerName: PrayerName,
+    createdBy: string,
+    classId?: string
+  ): Promise<AttendanceSession> {
+    return this.createSession({
+      classId: classId || '',
+      date,
+      sessionType: 'PRAYER',
+      prayerName,
+      createdBy
+    });
+  }
+
+  /** NEW: List all prayer sessions for a date (optionally filtered by schoolId) */
+  async listPrayerSessions(date: string, schoolId?: string): Promise<AttendanceSession[]> {
+    if (schoolId) {
+      return db.attendanceSessions
+        .where('[schoolId+classId+date+sessionType+prayerName]')
+        .between([schoolId, '', date, 'CLASS', ''], [schoolId, '', date, 'PRAYER', '\uffff'])
+        .toArray();
+    }
+    return db.attendanceSessions
+      .where('sessionType')
+      .equals('PRAYER')
+      .and((s: AttendanceSession) => s.date === date)
+      .toArray();
+  }
+
+  /** NEW: List prayer sessions by prayer name for a specific school and date */
+  async listPrayerSessionsByName(schoolId: string, prayerName: PrayerName, date?: string): Promise<AttendanceSession[]> {
+    if (date) {
+      return db.attendanceSessions
+        .where('[schoolId+classId+date+sessionType+prayerName]')
+        .between([schoolId, '', date, 'CLASS', ''], [schoolId, '', date, 'PRAYER', prayerName + '\uffff'])
+        .toArray();
+    }
+    return db.attendanceSessions
+      .where('sessionType')
+      .equals('PRAYER')
+      .and((s: AttendanceSession) => s.schoolId === schoolId && s.prayerName === prayerName)
+      .toArray();
+  }
+
+  /** NEW: Count attendance records for a prayer name in a specific school */
+  async countPrayerAttendance(schoolId: string, prayerName: PrayerName): Promise<number> {
+    let sessionId: string | undefined;
+    const sessions = await this.listPrayerSessionsByName(schoolId, prayerName);
+    if (sessions.length === 0) return 0;
+    const openSessions = sessions.filter((s) => s.status === 'open');
+    if (openSessions.length > 0) {
+      sessionId = openSessions[0].id;
+    } else {
+      sessionId = sessions[0].id;
+    }
+    return db.attendanceRecords
+      .where('sessionId')
+      .equals(sessionId)
+      .count();
+  }
+
+  /** NEW: Get prayer session by name */
+  async getPrayerSession(date: string, prayerName: PrayerName): Promise<AttendanceSession | undefined> {
+    return db.attendanceSessions
+      .where('sessionType')
+      .equals('PRAYER')
+      .and((s: AttendanceSession) => s.date === date && s.prayerName === prayerName)
+      .first();
   }
 }
 

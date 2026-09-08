@@ -1,10 +1,10 @@
 import { cameraService, CameraError } from '@services/camera';
 import { faceModelLoader, FaceError } from '@services/face';
-import { attendanceService, attendanceConfigService, determineAutoStatus } from '@services/attendance';
+import { attendanceService, attendanceConfigService, prayerConfigService, determineAutoStatus } from '@services/attendance';
 import { classRepository, studentRepository, faceProfileRepository } from '@repositories/index';
 import { formatTime } from '@utils/device';
 import { soundService } from '@services/sound';
-import type { AttendanceRecord, AttendanceSession, AttendanceStatus, ClassRoom, Student } from '@models/types';
+import type { AttendanceRecord, AttendanceSession, AttendanceStatus, ClassRoom, Student, PrayerName } from '@models/types';
 
 interface StudentRow {
   student: Student;
@@ -12,6 +12,7 @@ interface StudentRow {
 }
 
 const STATUS_OPTIONS: AttendanceStatus[] = ['HADIR', 'TERLAMBAT', 'IZIN', 'SAKIT', 'ALPA'];
+const PRAYER_NAMES: PrayerName[] = ['SUBUH', 'DHUHUR', 'ASHAR', 'MAGHRIB', 'ISYA'];
 
 export async function renderAttendance(root: HTMLElement): Promise<void> {
   let classes: ClassRoom[] = [];
@@ -20,6 +21,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
   let rows: StudentRow[] = [];
   let isRunning = false;
   let runRaf: number | null = null;
+  let attendanceMode: 'CLASS' | 'PRAYER' = 'CLASS';
 
   root.innerHTML = `
     <div class="stack">
@@ -29,15 +31,37 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
       </header>
 
       <section class="card stack">
-        <h3 style="margin:0;">1. Pilih Kelas & Buka Sesi</h3>
-        <div class="row" style="flex-wrap:wrap;gap:8px;">
+        <h3 style="margin:0;">1. Pilih Tipe Absensi</h3>
+        <div class="row" style="flex-wrap:wrap;gap:12px;align-items:center;">
+          <label class="row" style="gap:6px;font-size:14px;">
+            <input type="radio" name="attendance-mode" value="CLASS" checked /> Absensi Kelas (kelas spesifik)
+          </label>
+          <label class="row" style="gap:6px;font-size:14px;">
+            <input type="radio" name="attendance-mode" value="PRAYER" /> Absensi Shalat (school-wide)
+          </label>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;gap:8px;" id="class-section">
           <select id="sel-class" style="padding:10px;border:1px solid var(--color-border);border-radius:8px;min-width:200px;">
             <option value="">— Pilih kelas —</option>
           </select>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;gap:8px;display:none;" id="prayer-section">
+          <select id="sel-prayer" style="padding:10px;border:1px solid var(--color-border);border-radius:8px;min-width:180px;">
+            <option value="">— Pilih shalat —</option>
+            ${PRAYER_NAMES.map(p => `<option value="${p}">${p}</option>`).join('')}
+          </select>
+          <div id="prayer-times-info" class="muted" style="font-size:12px;margin-left:12px;">
+            (Waktu shalat akan ditampilkan saat memilih)
+          </div>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px;">
           <button class="btn btn-primary" id="btn-open">Buka Sesi</button>
           <button class="btn btn-danger" id="btn-close" disabled>Close Sesi</button>
         </div>
-        <div id="session-info" class="muted" style="font-size:13px;">Belum ada sesi aktif.</div>
+        <div id="session-info" class="muted" style="font-size:13px;margin-top:8px;">Belum ada sesi aktif.</div>
       </section>
 
       <section class="card stack">
@@ -76,11 +100,23 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
 
       <section class="card stack">
         <h3 style="margin:0;">Pengaturan Waktu Absensi</h3>
-        <div class="row" style="flex-wrap:wrap;gap:8px;">
+        <div class="row" style="flex-wrap:wrap;gap:8px;" id="config-section">
           <label class="row" style="gap:6px;">On-time until: <input id="cfg-ontime" type="time" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
           <label class="row" style="gap:6px;">Late after: <input id="cfg-late" type="time" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
           <label class="row" style="gap:6px;">Close at: <input id="cfg-close" type="time" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;" /></label>
           <button class="btn btn-primary" id="btn-cfg-save">Simpan</button>
+        </div>
+        <div id="prayer-config-section" class="stack" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--color-border);">
+          <h4 style="margin:0 0 8px;">Konfigurasi Waktu per Shalat</h4>
+          ${PRAYER_NAMES.map(prayer => `
+            <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;">
+              <label style="min-width:100px;font-size:13px;">${prayer}:</label>
+              <input type="time" class="prayer-ontime" data-prayer="${prayer}" placeholder="On-time" style="padding:6px;border:1px solid var(--color-border);border-radius:6px;width:110px;" />
+              <input type="time" class="prayer-late" data-prayer="${prayer}" placeholder="Late after" style="padding:6px;border:1px solid var(--color-border);border-radius:6px;width:110px;" />
+              <input type="time" class="prayer-close" data-prayer="${prayer}" placeholder="Close at" style="padding:6px;border:1px solid var(--color-border);border-radius:6px;width:110px;" />
+            </div>
+          `).join('')}
+          <button class="btn btn-primary" id="btn-prayer-config-save" style="margin-top:8px;">Simpan Pengaturan Shalat</button>
         </div>
         <p class="muted" style="margin:0;font-size:12px;">Status otomatis: scan sebelum on-time = HADIR, setelah = TERLAMBAT.</p>
       </section>
@@ -93,6 +129,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
   `;
 
   const selClass = root.querySelector<HTMLSelectElement>('#sel-class')!;
+  const selPrayer = root.querySelector<HTMLSelectElement>('#sel-prayer')!;
   const btnOpen = root.querySelector<HTMLButtonElement>('#btn-open')!;
   const btnClose = root.querySelector<HTMLButtonElement>('#btn-close')!;
   const sessionInfo = root.querySelector<HTMLDivElement>('#session-info')!;
@@ -114,6 +151,11 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
   const cfgLate = root.querySelector<HTMLInputElement>('#cfg-late')!;
   const cfgClose = root.querySelector<HTMLInputElement>('#cfg-close')!;
   const btnCfgSave = root.querySelector<HTMLButtonElement>('#btn-cfg-save')!;
+  const prayerSection = root.querySelector<HTMLDivElement>('#prayer-section')!;
+  const classSection = root.querySelector<HTMLDivElement>('#class-section')!;
+  const configSection = root.querySelector<HTMLDivElement>('#config-section')!;
+  const prayerConfigSection = root.querySelector<HTMLDivElement>('#prayer-config-section')!;
+  const prayerTimesInfo = root.querySelector<HTMLDivElement>('#prayer-times-info')!;
   const logEl = root.querySelector<HTMLPreElement>('#log')!;
 
   const video = document.createElement('video');
@@ -138,7 +180,6 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     logEl.textContent = `[${ts}] ${msg}\n` + logEl.textContent;
   };
 
-  /** Tampilkan feedback box (sukses / duplikat / liveness) di atas-bawah frame kamera. */
   const scanFeedbackEl = root.querySelector<HTMLDivElement>('#scan-feedback')!;
   let scanFeedbackTimer: number | null = null;
   const showScanFeedback = (
@@ -217,7 +258,8 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
       return;
     }
     const c = currentClass?.name ?? '?';
-    sessionInfo.innerHTML = `Sesi aktif: <strong>${currentSession.id}</strong> · kelas <strong>${c}</strong> · tanggal <strong>${currentSession.date}</strong> · status <strong>${currentSession.status}</strong>`;
+    const sessionTypeText = currentSession.sessionType === 'PRAYER' ? `Shalat: ${currentSession.prayerName}` : `Kelas: ${c}`;
+    sessionInfo.innerHTML = `Sesi aktif: <strong>${currentSession.id}</strong> · ${sessionTypeText} · tanggal <strong>${currentSession.date}</strong> · status <strong>${currentSession.status}</strong>`;
     btnClose.disabled = currentSession.status !== 'open';
   };
 
@@ -227,26 +269,27 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
       summaryEl.textContent = '';
       return;
     }
-    rows = await attendanceService.listStudentsInSession(currentSession.id);
+    let studentsWithRecords: Array<{ student: Student; record: AttendanceRecord | null }>;
+    if (currentSession.sessionType === 'PRAYER') {
+      studentsWithRecords = await attendanceService.listPrayerStudentsInSession(currentSession.id);
+    } else {
+      studentsWithRecords = await attendanceService.listStudentsInSession(currentSession.id);
+    }
+    rows = studentsWithRecords;
     const summary = await attendanceService.getSessionSummary(currentSession.id);
     summaryEl.innerHTML = `Total <strong>${summary.total}</strong> · HADIR <strong style="color:var(--color-success)">${summary.hadir}</strong> · TERLAMBAT <strong style="color:var(--color-warn)">${summary.terlambat}</strong> · IZIN ${summary.izin} · SAKIT ${summary.sakit} · ALPA ${summary.alpa} · <span style="color:var(--color-warn)">Belum: ${summary.belum}</span>`;
 
     if (rows.length === 0) {
-      tableEl.innerHTML = '<p class="muted" style="margin:0;">Tidak ada siswa di kelas ini. Tambahkan siswa dulu.</p>';
+      tableEl.innerHTML = `<p class="muted" style="margin:0;">Tidak ada siswa di ${currentSession.sessionType === 'PRAYER' ? 'sekolah ini' : 'kelas ini'}. Tambahkan siswa dulu.</p>`;
       return;
     }
     tableEl.innerHTML = `
       <div class="student-table-header">
         <div>Nama</div><div>NIS</div><div>Status</div><div>Aksi</div>
       </div>
-      ${rows
-        .map(
-          ({ student, record }) => `
+      ${rows.map(({ student, record }) => `
         <div class="student-table-row">
-          <div>
-            <strong>${student.name}</strong>
-            ${record ? `<div class="muted student-table-meta">${formatTime(record.timestamp)} · conf=${record.confidence.toFixed(2)}</div>` : '<div class="muted student-table-meta">—</div>'}
-          </div>
+          <div><strong>${student.name}</strong>${record ? `<div class="muted student-table-meta">${formatTime(record.timestamp)} · conf=${record.confidence.toFixed(2)}</div>` : '<div class="muted student-table-meta">—</div>'}</div>
           <div class="muted student-table-nis">${student.nis}</div>
           <div>
             <select data-status="${student.id}" ${record ? '' : ''} class="student-table-select">
@@ -255,14 +298,10 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
             </select>
           </div>
           <div class="row student-table-actions">
-            ${record
-              ? `<button class="btn btn-danger" data-del-record="${record.id}">Batal</button>`
-              : `<button class="btn btn-ghost" data-manual="${student.id}">Manual</button>`
-            }
+            ${record ? `<button class="btn btn-danger" data-del-record="${record.id}">Batal</button>` : `<button class="btn btn-ghost" data-manual="${student.id}">Manual</button>`}
           </div>
-        </div>`
-        )
-        .join('')}
+        </div>
+      `).join('')}
     `;
 
     tableEl.querySelectorAll<HTMLSelectElement>('[data-status]').forEach((s) => {
@@ -276,8 +315,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
           log(`Update status ${row.student.name} → ${newStatus}`);
           await refreshTable();
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Unknown error';
-          log(`ERROR update: ${msg}`);
+          log(`ERROR update: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       });
     });
@@ -290,8 +328,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
           log(`Record dihapus: ${id}`);
           await refreshTable();
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Unknown error';
-          log(`ERROR: ${msg}`);
+          log(`ERROR: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       });
     });
@@ -300,17 +337,13 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
         if (!currentSession) return;
         const id = b.dataset.manual!;
         const status = (prompt('Status (HADIR / TERLAMBAT / IZIN / SAKIT / ALPA):', 'HADIR') ?? '').toUpperCase() as AttendanceStatus;
-        if (!STATUS_OPTIONS.includes(status)) {
-          log('Status tidak valid.');
-          return;
-        }
+        if (!STATUS_OPTIONS.includes(status)) { log('Status tidak valid.'); return; }
         try {
           await attendanceService.markManual(currentSession.id, id, status, 0);
           log(`Manual: ${status} dicatat.`);
           await refreshTable();
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Unknown error';
-          log(`ERROR manual: ${msg}`);
+          log(`ERROR manual: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       });
     });
@@ -323,17 +356,32 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     cfgClose.value = cfg.closeAt;
     thresholdInput.value = String(cfg.threshold);
     thresholdVal.textContent = cfg.threshold.toFixed(2);
+
+    if (attendanceMode === 'PRAYER') {
+      configSection.style.display = 'none';
+      prayerConfigSection.style.display = 'block';
+      const prayerCfg = await prayerConfigService.load();
+      document.querySelectorAll<HTMLInputElement>('.prayer-ontime').forEach(el => {
+        const prayer = el.dataset.prayer as PrayerName;
+        el.value = prayerCfg.onTime[prayer] || '';
+      });
+      document.querySelectorAll<HTMLInputElement>('.prayer-late').forEach(el => {
+        const prayer = el.dataset.prayer as PrayerName;
+        el.value = prayerCfg.lateAfter[prayer] || '';
+      });
+      document.querySelectorAll<HTMLInputElement>('.prayer-close').forEach(el => {
+        const prayer = el.dataset.prayer as PrayerName;
+        el.value = prayerCfg.closeAt[prayer] || '';
+      });
+    } else {
+      configSection.style.display = 'flex';
+      prayerConfigSection.style.display = 'none';
+    }
   };
 
-const startLoop = async () => {
-    if (!currentSession) {
-      log('Buka sesi dulu.');
-      return;
-    }
-    if (!cameraService.isActive()) {
-      log('Aktifkan kamera dulu.');
-      return;
-    }
+  const startLoop = async () => {
+    if (!currentSession) { log('Buka sesi dulu.'); return; }
+    if (!cameraService.isActive()) { log('Aktifkan kamera dulu.'); return; }
     if (!faceModelLoader.isLoaded()) await faceModelLoader.load();
     isRunning = true;
     btnRun.disabled = true;
@@ -351,41 +399,37 @@ const startLoop = async () => {
           await soundService.play('attendance-retry');
         }
         if (result) {
-          drawBox(
-            result.detection.box,
-            result.matched ? '#16a34a' : '#f59e0b',
-            result.candidate ? `${result.candidate.label} ${result.candidate.score.toFixed(2)}` : 'UNKNOWN'
-          );
+          drawBox(result.detection.box, result.matched ? '#16a34a' : '#f59e0b',
+            result.candidate ? `${result.candidate.label} ${result.candidate.score.toFixed(2)}` : 'UNKNOWN');
           recogInfo.innerHTML = result.matched && result.candidate
             ? `Match: <strong>${result.candidate.label}</strong> (${result.candidate.score.toFixed(3)}) · ${result.durationMs.toFixed(0)}ms`
             : `No match · ${result.durationMs.toFixed(0)}ms`;
 
-if (result.matched && result.candidate) {
+          if (result.matched && result.candidate) {
             const student = rows.find((r) => r.student.name === result.candidate!.label)?.student;
             if (student) {
-              if (student.classId !== currentSession!.classId) {
+              if (currentSession.sessionType === 'CLASS' && student.classId !== currentSession.classId) {
                 log(`⚠ ${student.name} bukan anggota kelas ini.`);
                 showScanFeedback('error', 'Kelas Tidak Cocok', `${student.name} bukan anggota kelas ini`, 2500);
               } else {
                 const existing = rows.find((r) => r.student.id === student.id)?.record;
                 if (existing) {
-                  showScanFeedback(
-                    'duplicate',
-                    'Sudah Absen',
-                    `${student.name}, sudah melakukan absen (${existing.status})`,
-                    3000
-                  );
+                  showScanFeedback('duplicate', 'Sudah Absen', `${student.name}, sudah melakukan absen (${existing.status})`, 3000);
                   log(`⚠ ${student.name} sudah absen (${existing.status}).`);
                   await soundService.play('attendance-already');
                 } else {
                   try {
-                    const rec = await attendanceService.recordAttendance(currentSession.id, student.id, result.candidate.score);
-                    showScanFeedback(
-                      'success',
-                      'Status Absen · Absen Berhasil',
-                      `${student.name} → ${rec.status}`,
-                      3000
-                    );
+                    let rec;
+                    if (currentSession.sessionType === 'PRAYER') {
+                      const prayerCfg = await prayerConfigService.load();
+                      rec = await attendanceService.recordPrayerAttendance(
+                        currentSession.id, student.id, result.candidate.score,
+                        prayerCfg, currentSession.prayerName!
+                      );
+                    } else {
+                      rec = await attendanceService.recordAttendance(currentSession.id, student.id, result.candidate.score);
+                    }
+                    showScanFeedback('success', 'Status Absen · Absen Berhasil', `${student.name} → ${rec.status}`, 3000);
                     log(`✓ ${student.name} → ${rec.status} @ ${formatTime(rec.timestamp)}`);
                     await soundService.play('attendance-ok');
                   } catch (err: unknown) {
@@ -412,26 +456,22 @@ if (result.matched && result.candidate) {
                 }
               }
             }
-           } else {
-             clearOverlay();
-           }
-         }
-       } catch (err: unknown) {
-         const msg = err instanceof Error ? err.message : 'Unknown error';
-         log(`ERROR loop: ${msg}`);
-         await soundService.play('attendance-retry');
-       }
-       runRaf = window.setTimeout(loop, 600);
-     };
-      loop();
+          } else {
+            clearOverlay();
+          }
+        }
+      } catch (err: unknown) {
+        log(`ERROR loop: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        await soundService.play('attendance-retry');
+      }
+      runRaf = window.setTimeout(loop, 600);
     };
+    loop();
+  };
 
   const stopLoop = () => {
     isRunning = false;
-    if (runRaf !== null) {
-      clearTimeout(runRaf);
-      runRaf = null;
-    }
+    if (runRaf !== null) { clearTimeout(runRaf); runRaf = null; }
     hideScanFeedback();
     btnRun.disabled = !cameraService.isActive() || !currentSession;
     btnPause.disabled = true;
@@ -439,141 +479,131 @@ if (result.matched && result.candidate) {
   };
 
   btnOpen.addEventListener('click', async () => {
-    const classId = selClass.value;
-    if (!classId) {
-      log('Pilih kelas dulu.');
-      return;
-    }
-    try {
-      btnOpen.classList.add('is-loading');
-      btnOpen.disabled = true;
-      const session = await attendanceService.openSession(classId, 'admin');
-      currentSession = session;
-      currentClass = classes.find((c) => c.id === classId) ?? null;
-      log(`Sesi dibuka: ${session.id} (class=${classId}, date=${session.date})`);
-      await Promise.all([refreshSessionInfo(), refreshTable()]);
-      btnRun.disabled = !cameraService.isActive();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      log(`ERROR buka sesi: ${msg}`);
-    } finally {
-      btnOpen.classList.remove('is-loading');
-      btnOpen.disabled = false;
+    if (attendanceMode === 'CLASS') {
+      const classId = selClass.value;
+      if (!classId) { log('Pilih kelas dulu.'); return; }
+      try {
+        btnOpen.classList.add('is-loading'); btnOpen.disabled = true;
+        const session = await attendanceService.openSession(classId, 'admin');
+        currentSession = session; currentClass = classes.find((c) => c.id === classId) ?? null;
+        log(`Sesi dibuka: ${session.id} (class=${classId}, date=${session.date})`);
+        await Promise.all([refreshSessionInfo(), refreshTable()]);
+        btnRun.disabled = !cameraService.isActive();
+      } catch (err: unknown) {
+        log(`ERROR buka sesi: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+        btnOpen.classList.remove('is-loading'); btnOpen.disabled = false;
+      }
+    } else {
+      const prayerName = selPrayer.value;
+      if (!prayerName) { log('Pilih shalat dulu.'); return; }
+      try {
+        btnOpen.classList.add('is-loading'); btnOpen.disabled = true;
+        const session = await attendanceService.openPrayerSession(
+          new Date().toISOString().slice(0, 10), prayerName as PrayerName, 'admin'
+        );
+        currentSession = session; currentClass = null;
+        log(`Sesi shalat dibuka: ${session.id} (sholat=${prayerName}, date=${session.date})`);
+        await Promise.all([refreshSessionInfo(), refreshTable()]);
+        btnRun.disabled = !cameraService.isActive();
+      } catch (err: unknown) {
+        log(`ERROR buka sesi shalat: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+        btnOpen.classList.remove('is-loading'); btnOpen.disabled = false;
+      }
     }
   });
 
   btnClose.addEventListener('click', async () => {
     if (!currentSession) return;
     if (!confirm('Close sesi ini? Record yang sudah ada tetap tersimpan.')) return;
-    try {
-      stopLoop();
-      const closed = await attendanceService.closeSession(currentSession.id);
-      currentSession = closed;
-      log(`Sesi ditutup.`);
-      await refreshSessionInfo();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      log(`ERROR close: ${msg}`);
-    }
+    try { stopLoop(); const closed = await attendanceService.closeSession(currentSession.id); currentSession = closed; log(`Sesi ditutup.`); await refreshSessionInfo(); }
+    catch (err: unknown) { log(`ERROR close: ${err instanceof Error ? err.message : 'Unknown error'}`); }
   });
 
   btnCam.addEventListener('click', async () => {
-    try {
-      btnCam.disabled = true;
-      log('Meminta izin kamera...');
-      await cameraService.start(video);
-      hidePlaceholder();
-      log('Kamera aktif.');
-      setCamButtons(true);
-    } catch (err: unknown) {
-      const msg = err instanceof CameraError ? err.message : (err as Error).message;
-      log(`ERROR kamera: ${msg}`);
-      showPlaceholder();
-      btnCam.disabled = false;
-    }
+    try { btnCam.disabled = true; log('Meminta izin kamera...'); await cameraService.start(video); hidePlaceholder(); log('Kamera aktif.'); setCamButtons(true); }
+    catch (err: unknown) { log(`ERROR kamera: ${err instanceof CameraError ? err.message : (err as Error).message}`); showPlaceholder(); btnCam.disabled = false; }
   });
 
   btnSwitch.addEventListener('click', async () => {
-    try {
-      await cameraService.switchCamera(video);
-      log('Kamera di-switch.');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      log(`ERROR switch: ${msg}`);
-    }
+    try { await cameraService.switchCamera(video); log('Kamera di-switch.'); }
+    catch (err: unknown) { log(`ERROR switch: ${err instanceof Error ? err.message : 'Unknown error'}`); }
   });
 
   btnStop.addEventListener('click', async () => {
-    stopLoop();
-    await cameraService.stop();
-    clearOverlay();
-    showPlaceholder();
-    btnCam.disabled = false;
-    btnSwitch.disabled = true;
-    btnStop.disabled = true;
-    btnRun.disabled = true;
-    btnPause.disabled = true;
-    log('Kamera dimatikan.');
+    stopLoop(); await cameraService.stop(); clearOverlay(); showPlaceholder();
+    btnCam.disabled = false; btnSwitch.disabled = true; btnStop.disabled = true; btnRun.disabled = true; btnPause.disabled = true; log('Kamera dimatikan.');
   });
 
   btnLoad.addEventListener('click', async () => {
-    try {
-      btnLoad.classList.add('is-loading');
-      btnLoad.disabled = true;
-      log('Memuat model...');
-      await faceModelLoader.load();
-      log('Model siap.');
-    } catch (err: unknown) {
-      const msg = err instanceof FaceError ? err.message : (err as Error).message;
-      log(`ERROR load model: ${msg}`);
-    } finally {
-      btnLoad.classList.remove('is-loading');
-      btnLoad.disabled = false;
-    }
+    try { btnLoad.classList.add('is-loading'); btnLoad.disabled = true; log('Memuat model...'); await faceModelLoader.load(); log('Model siap.'); }
+    catch (err: unknown) { log(`ERROR load model: ${err instanceof FaceError ? err.message : (err as Error).message}`); }
+    finally { btnLoad.classList.remove('is-loading'); btnLoad.disabled = false; }
   });
 
   btnRun.addEventListener('click', () => void startLoop());
   btnPause.addEventListener('click', stopLoop);
 
-  thresholdInput.addEventListener('input', () => {
-    thresholdVal.textContent = thresholdInput.value;
-  });
+  thresholdInput.addEventListener('input', () => { thresholdVal.textContent = thresholdInput.value; });
 
   btnCfgSave.addEventListener('click', async () => {
-    try {
-      btnCfgSave.classList.add('is-loading');
-      btnCfgSave.disabled = true;
-      await attendanceConfigService.save({
-        onTimeUntil: cfgOntime.value,
-        lateAfter: cfgLate.value,
-        closeAt: cfgClose.value,
-        threshold: parseFloat(thresholdInput.value)
-      });
-      const cfg = await attendanceConfigService.load();
-      log(`Config disimpan. Auto status saat ini: ${determineAutoStatus(cfg)}.`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      log(`ERROR save config: ${msg}`);
-    } finally {
-      btnCfgSave.classList.remove('is-loading');
-      btnCfgSave.disabled = false;
-    }
+    try { btnCfgSave.classList.add('is-loading'); btnCfgSave.disabled = true;
+      await attendanceConfigService.save({ onTimeUntil: cfgOntime.value, lateAfter: cfgLate.value, closeAt: cfgClose.value, threshold: parseFloat(thresholdInput.value) });
+      log(`Config disimpan. Auto status saat ini: ${determineAutoStatus(await attendanceConfigService.load())}.`);
+      await loadConfig();
+    } catch (err: unknown) { log(`ERROR save config: ${err instanceof Error ? err.message : 'Unknown error'}`); }
+    finally { btnCfgSave.classList.remove('is-loading'); btnCfgSave.disabled = false; }
+  });
+
+  const btnPrayerConfigSave = root.querySelector<HTMLButtonElement>('#btn-prayer-config-save')!;
+  if (btnPrayerConfigSave) {
+    btnPrayerConfigSave.addEventListener('click', async () => {
+      try { btnPrayerConfigSave.classList.add('is-loading'); btnPrayerConfigSave.disabled = true;
+        const prayerCfg = { onTime: {} as Record<PrayerName, string>, lateAfter: {} as Record<PrayerName, string>, closeAt: {} as Record<PrayerName, string> };
+        document.querySelectorAll<HTMLInputElement>('.prayer-ontime').forEach(el => { const prayer = el.dataset.prayer as PrayerName; if (el.value) { prayerCfg.onTime[prayer] = el.value; } });
+        document.querySelectorAll<HTMLInputElement>('.prayer-late').forEach(el => { const prayer = el.dataset.prayer as PrayerName; if (el.value) { prayerCfg.lateAfter[prayer] = el.value; } });
+        document.querySelectorAll<HTMLInputElement>('.prayer-close').forEach(el => { const prayer = el.dataset.prayer as PrayerName; if (el.value) { prayerCfg.closeAt[prayer] = el.value; } });
+        await prayerConfigService.save(prayerCfg as Partial<{ onTime: Record<PrayerName, string>; lateAfter: Record<PrayerName, string>; closeAt: Record<PrayerName, string>; }>); log('Pengaturan waktu shalat disimpan.'); await loadConfig();
+      } catch (err: unknown) { log(`ERROR save prayer config: ${err instanceof Error ? err.message : 'Unknown error'}`); }
+      finally { btnPrayerConfigSave.classList.remove('is-loading'); btnPrayerConfigSave.disabled = false; }
+    });
+  }
+
+  const modeRadios = root.querySelectorAll<HTMLInputElement>('input[name="attendance-mode"]');
+  modeRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      attendanceMode = target.value as 'CLASS' | 'PRAYER';
+      log(`Mode absensi diubah ke: ${attendanceMode}`);
+      if (attendanceMode === 'CLASS') {
+        classSection.style.display = 'flex'; prayerSection.style.display = 'none';
+        configSection.style.display = 'flex'; prayerConfigSection.style.display = 'none';
+        selPrayer.value = ''; currentSession = null; currentClass = null;
+        refreshSessionInfo(); refreshTable();
+      } else {
+        classSection.style.display = 'none'; prayerSection.style.display = 'flex';
+        configSection.style.display = 'none'; prayerConfigSection.style.display = 'block';
+        selClass.value = ''; currentSession = null; currentClass = null;
+        refreshSessionInfo(); refreshTable(); loadConfig();
+      }
+    });
+  });
+
+  selPrayer.addEventListener('change', () => {
+    const prayerName = selPrayer.value;
+    if (prayerName) { prayerTimesInfo.textContent = `Waktu shalat ${prayerName} akan ditampilkan di bawah.`; currentSession = null; refreshSessionInfo(); refreshTable(); }
+    else { prayerTimesInfo.textContent = 'Pilih shalat dari daftar di atas'; }
   });
 
   await Promise.all([refreshClasses(), loadConfig()]);
   await refreshTable();
-  log('Halaman absensi siap. Auto status: ' + determineAutoStatus(await attendanceConfigService.load()));
+  log('Halaman absensi siap. Mode: ' + attendanceMode + '. Auto status: ' + determineAutoStatus(await attendanceConfigService.load()));
 
-  // Hitung face profile count untuk info
   const allStudents = await studentRepository.list();
   let withProfile = 0;
-  for (const s of allStudents) {
-    if ((await faceProfileRepository.listForStudent(s.id)).length > 0) withProfile++;
-  }
+  for (const s of allStudents) { if ((await faceProfileRepository.listForStudent(s.id)).length > 0) withProfile++; }
   log(`Info: ${allStudents.length} siswa, ${withProfile} sudah punya face profile.`);
 
-  window.addEventListener('beforeunload', () => {
-    void cameraService.stop();
-    stopLoop();
-  });
+  window.addEventListener('beforeunload', () => { void cameraService.stop(); stopLoop(); });
 }

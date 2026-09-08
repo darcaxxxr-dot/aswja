@@ -35,6 +35,13 @@ export interface AppSettings {
     isConfigured: boolean;
     source: 'env' | 'runtime' | 'none';
   };
+  prayer: {
+    subuh: { onTimeUntil: string; lateAfter: string; closeAt: string };
+    dhuhr: { onTimeUntil: string; lateAfter: string; closeAt: string };
+    ashar: { onTimeUntil: string; lateAfter: string; closeAt: string };
+    maghrib: { onTimeUntil: string; lateAfter: string; closeAt: string };
+    isya: { onTimeUntil: string; lateAfter: string; closeAt: string };
+  };
 }
 
 const KEYS = {
@@ -50,7 +57,22 @@ const KEYS = {
   soundEnabled: 'sound.enabled',
   soundVolume: 'sound.volume',
   syncAutoEnabled: 'sync.autoEnabled',
-  syncIntervalMs: 'sync.intervalMs'
+  syncIntervalMs: 'sync.intervalMs',
+  prayerSubuhOnTime: 'prayer.subuh.onTimeUntil',
+  prayerSubuhLateAfter: 'prayer.subuh.lateAfter',
+  prayerSubuhCloseAt: 'prayer.subuh.closeAt',
+  prayerDhuhrOnTime: 'prayer.dhuhr.onTimeUntil',
+  prayerDhuhrLateAfter: 'prayer.dhuhr.lateAfter',
+  prayerDhuhrCloseAt: 'prayer.dhuhr.closeAt',
+  prayerAsharOnTime: 'prayer.ashar.onTimeUntil',
+  prayerAsharLateAfter: 'prayer.ashar.lateAfter',
+  prayerAsharCloseAt: 'prayer.ashar.closeAt',
+  prayerMaghribOnTime: 'prayer.maghrib.onTimeUntil',
+  prayerMaghribLateAfter: 'prayer.maghrib.lateAfter',
+  prayerMaghribCloseAt: 'prayer.maghrib.closeAt',
+  prayerIsyaOnTime: 'prayer.isya.onTimeUntil',
+  prayerIsyaLateAfter: 'prayer.isya.lateAfter',
+  prayerIsyaCloseAt: 'prayer.isya.closeAt'
 } as const;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -84,6 +106,13 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     keyLast4: '',
     isConfigured: false,
     source: 'none'
+  },
+  prayer: {
+    subuh: { onTimeUntil: '05:00', lateAfter: '05:00', closeAt: '06:00' },
+    dhuhr: { onTimeUntil: '12:00', lateAfter: '12:00', closeAt: '13:00' },
+    ashar: { onTimeUntil: '15:00', lateAfter: '15:00', closeAt: '16:00' },
+    maghrib: { onTimeUntil: '18:00', lateAfter: '18:00', closeAt: '19:00' },
+    isya: { onTimeUntil: '19:30', lateAfter: '19:30', closeAt: '21:00' }
   }
 };
 
@@ -102,7 +131,22 @@ export class SettingsService {
       settingRepository.get(KEYS.faceModelVersion),
       settingRepository.get(KEYS.faceMinQualityScore),
       settingRepository.get(KEYS.syncAutoEnabled),
-      settingRepository.get(KEYS.syncIntervalMs)
+      settingRepository.get(KEYS.syncIntervalMs),
+      settingRepository.get(KEYS.prayerSubuhOnTime),
+      settingRepository.get(KEYS.prayerSubuhLateAfter),
+      settingRepository.get(KEYS.prayerSubuhCloseAt),
+      settingRepository.get(KEYS.prayerDhuhrOnTime),
+      settingRepository.get(KEYS.prayerDhuhrLateAfter),
+      settingRepository.get(KEYS.prayerDhuhrCloseAt),
+      settingRepository.get(KEYS.prayerAsharOnTime),
+      settingRepository.get(KEYS.prayerAsharLateAfter),
+      settingRepository.get(KEYS.prayerAsharCloseAt),
+      settingRepository.get(KEYS.prayerMaghribOnTime),
+      settingRepository.get(KEYS.prayerMaghribLateAfter),
+      settingRepository.get(KEYS.prayerMaghribCloseAt),
+      settingRepository.get(KEYS.prayerIsyaOnTime),
+      settingRepository.get(KEYS.prayerIsyaLateAfter),
+      settingRepository.get(KEYS.prayerIsyaCloseAt)
     ]);
 
     return {
@@ -147,6 +191,7 @@ export class SettingsService {
     face?: Partial<AppSettings['face']>;
     sound?: Partial<AppSettings['sound']>;
     sync?: Partial<AppSettings['sync']>;
+    prayer?: Partial<AppSettings['prayer']>;
   }): Promise<void> {
     if (updates.schoolName !== undefined) {
       await settingRepository.set(KEYS.schoolName, updates.schoolName);
@@ -174,6 +219,24 @@ export class SettingsService {
       const s = updates.sync;
       if (s.autoEnabled !== undefined) await settingRepository.set(KEYS.syncAutoEnabled, String(s.autoEnabled));
       if (s.intervalMs !== undefined) await settingRepository.set(KEYS.syncIntervalMs, String(s.intervalMs));
+    }
+    if (updates.prayer) {
+      const p = updates.prayer;
+      if (p.subuh?.onTimeUntil !== undefined) await settingRepository.set(KEYS.prayerSubuhOnTime, p.subuh.onTimeUntil);
+      if (p.subuh?.lateAfter !== undefined) await settingRepository.set(KEYS.prayerSubuhLateAfter, p.subuh.lateAfter);
+      if (p.subuh?.closeAt !== undefined) await settingRepository.set(KEYS.prayerSubuhCloseAt, p.subuh.closeAt);
+      if (p.dhuhr?.onTimeUntil !== undefined) await settingRepository.set(KEYS.prayerDhuhrOnTime, p.dhuhr.onTimeUntil);
+      if (p.dhuhr?.lateAfter !== undefined) await settingRepository.set(KEYS.prayerDhuhrLateAfter, p.dhuhr.lateAfter);
+      if (p.dhuhr?.closeAt !== undefined) await settingRepository.set(KEYS.prayerDhuhrCloseAt, p.dhuhr.closeAt);
+      if (p.ashar?.onTimeUntil !== undefined) await settingRepository.set(KEYS.prayerAsharOnTime, p.ashar.onTimeUntil);
+      if (p.ashar?.lateAfter !== undefined) await settingRepository.set(KEYS.prayerAsharLateAfter, p.ashar.lateAfter);
+      if (p.ashar?.closeAt !== undefined) await settingRepository.set(KEYS.prayerAsharCloseAt, p.ashar.closeAt);
+      if (p.maghrib?.onTimeUntil !== undefined) await settingRepository.set(KEYS.prayerMaghribOnTime, p.maghrib.onTimeUntil);
+      if (p.maghrib?.lateAfter !== undefined) await settingRepository.set(KEYS.prayerMaghribLateAfter, p.maghrib.lateAfter);
+      if (p.maghrib?.closeAt !== undefined) await settingRepository.set(KEYS.prayerMaghribCloseAt, p.maghrib.closeAt);
+      if (p.isya?.onTimeUntil !== undefined) await settingRepository.set(KEYS.prayerIsyaOnTime, p.isya.onTimeUntil);
+      if (p.isya?.lateAfter !== undefined) await settingRepository.set(KEYS.prayerIsyaLateAfter, p.isya.lateAfter);
+      if (p.isya?.closeAt !== undefined) await settingRepository.set(KEYS.prayerIsyaCloseAt, p.isya.closeAt);
     }
   }
 

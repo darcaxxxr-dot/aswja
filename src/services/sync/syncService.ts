@@ -73,7 +73,7 @@ function getCloudColumns(table: TableKey): string[] {
     case 'faceProfiles':
       return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at', 'deleted_at'];
     case 'attendanceSessions':
-      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'created_by', 'created_at', 'deleted_at'];
+      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'session_type', 'prayer_name', 'created_by', 'created_at', 'deleted_at'];
     case 'attendanceRecords':
       return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_at', 'deleted_at'];
     default:

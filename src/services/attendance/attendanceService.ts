@@ -1,7 +1,7 @@
 import { attendanceRepository, studentRepository, classRepository, faceProfileRepository, settingRepository } from '@repositories/index';
 import { cameraService } from '@services/camera';
 import { faceRecognitionService, livenessService, faceModelLoader, type RecognitionResult, type LivenessChallenge } from '@services/face';
-import type { AttendanceRecord, AttendanceSession, AttendanceStatus, ClassRoom, Student } from '@models/types';
+import type { AttendanceRecord, AttendanceSession, AttendanceStatus, ClassRoom, Student, PrayerName } from '@models/types';
 
 export interface AttendanceConfig {
   onTimeUntil: string;
@@ -19,6 +19,36 @@ export const DEFAULT_ATTENDANCE_CONFIG: AttendanceConfig = {
   threshold: 0.8,
   livenessEnabled: false,
   livenessChallenge: 'blink'
+};
+
+export interface PrayerConfig {
+  onTime: Record<PrayerName, string>;
+  lateAfter: Record<PrayerName, string>;
+  closeAt: Record<PrayerName, string>;
+}
+
+export const DEFAULT_PRAYER_CONFIG: PrayerConfig = {
+  onTime: {
+    SUBUH: '05:55',
+    DHUHUR: '11:55',
+    ASHAR: '13:30',
+    MAGHRIB: '16:20',
+    ISYA: '18:10'
+  },
+  lateAfter: {
+    SUBUH: '06:15',
+    DHUHUR: '13:15',
+    ASHAR: '14:45',
+    MAGHRIB: '16:45',
+    ISYA: '18:40'
+  },
+  closeAt: {
+    SUBUH: '06:30',
+    DHUHUR: '14:30',
+    ASHAR: '16:00',
+    MAGHRIB: '17:15',
+    ISYA: '19:15'
+  }
 };
 
 function parseHHMM(value: string | undefined, fallback: string): { hours: number; minutes: number } {
@@ -73,6 +103,79 @@ export function determineAutoStatus(config: AttendanceConfig, now: Date = new Da
   return nowMin <= cutoffMin ? 'HADIR' : 'TERLAMBAT';
 }
 
+export class PrayerConfigService {
+  async load(): Promise<PrayerConfig> {
+    const keys: Array<[PrayerName, string]> = [
+      ['SUBUH', 'prayer.subuh'],
+      ['DHUHUR', 'prayer.dhuhr'],
+      ['ASHAR', 'prayer.ashar'],
+      ['MAGHRIB', 'prayer.maghrib'],
+      ['ISYA', 'prayer.isya']
+    ];
+    const stored = await Promise.all(
+      keys.flatMap(([, prefix]) => [
+        settingRepository.get(`${prefix}.onTimeUntil`),
+        settingRepository.get(`${prefix}.lateAfter`),
+        settingRepository.get(`${prefix}.closeAt`)
+      ])
+    );
+    const onTime: Record<PrayerName, string> = {} as Record<PrayerName, string>;
+    const lateAfter: Record<PrayerName, string> = {} as Record<PrayerName, string>;
+    const closeAt: Record<PrayerName, string> = {} as Record<PrayerName, string>;
+    let idx = 0;
+    for (const [name] of keys) {
+      onTime[name] = stored[idx++] ?? DEFAULT_PRAYER_CONFIG.onTime[name];
+      lateAfter[name] = stored[idx++] ?? DEFAULT_PRAYER_CONFIG.lateAfter[name];
+      closeAt[name] = stored[idx++] ?? DEFAULT_PRAYER_CONFIG.closeAt[name];
+    }
+    return { onTime, lateAfter, closeAt };
+  }
+
+  async save(config: Partial<PrayerConfig>): Promise<void> {
+    const prefixMap: Record<PrayerName, string> = {
+      SUBUH: 'prayer.subuh',
+      DHUHUR: 'prayer.dhuhr',
+      ASHAR: 'prayer.ashar',
+      MAGHRIB: 'prayer.maghrib',
+      ISYA: 'prayer.isya'
+    };
+    if (config.onTime) {
+      for (const [name, value] of Object.entries(config.onTime)) {
+        if (value !== undefined) {
+          await settingRepository.set(`${prefixMap[name as PrayerName]}.onTimeUntil`, value);
+        }
+      }
+    }
+    if (config.lateAfter) {
+      for (const [name, value] of Object.entries(config.lateAfter)) {
+        if (value !== undefined) {
+          await settingRepository.set(`${prefixMap[name as PrayerName]}.lateAfter`, value);
+        }
+      }
+    }
+    if (config.closeAt) {
+      for (const [name, value] of Object.entries(config.closeAt)) {
+        if (value !== undefined) {
+          await settingRepository.set(`${prefixMap[name as PrayerName]}.closeAt`, value);
+        }
+      }
+    }
+  }
+}
+
+export const prayerConfigService = new PrayerConfigService();
+
+export function determineAutoStatusForPrayer(
+  prayerConfig: PrayerConfig,
+  prayerName: PrayerName,
+  now: Date = new Date()
+): 'HADIR' | 'TERLAMBAT' {
+  const cutoff = parseHHMM(prayerConfig.onTime[prayerName], DEFAULT_PRAYER_CONFIG.onTime[prayerName]);
+  const cutoffMin = cutoff.hours * 60 + cutoff.minutes;
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  return nowMin <= cutoffMin ? 'HADIR' : 'TERLAMBAT';
+}
+
 export class AttendanceService {
   private getEmbeddings = async (): Promise<Array<{ id: string; label: string; embedding: number[][]; qualityScore: number; createdAt: number; studentId: string }>> => {
     const students = await studentRepository.list();
@@ -97,25 +200,43 @@ export class AttendanceService {
     const existing = await attendanceRepository.listSessionsByClass(classId, date);
     const openOne = existing.find((s) => s.status === 'open');
     if (openOne) return openOne;
-    return attendanceRepository.createSession({ classId, date, createdBy });
+    return attendanceRepository.createSession({ classId, date, createdBy, sessionType: 'CLASS' });
   }
 
-  async getSessionWithClass(id: string): Promise<{ session: AttendanceSession; cls: ClassRoom | undefined } | null> {
-    const session = await attendanceRepository.getSession(id);
-    if (!session) return null;
-    const cls = await classRepository.getById(session.classId);
-    return { session, cls };
-  }
+async openPrayerSession(
+     date: string,
+     prayerName: PrayerName,
+     createdBy: string,
+     classId?: string
+   ): Promise<AttendanceSession> {
+     const existing = await attendanceRepository.listPrayerSessions(date);
+     const openOne = existing.find((s) => s.status === 'open' && s.prayerName === prayerName);
+     if (openOne) return openOne;
+     return attendanceRepository.createPrayerSession(date, prayerName, createdBy, classId);
+   }
 
-  async listStudentsInSession(sessionId: string): Promise<Array<{ student: Student; record: AttendanceRecord | null }>> {
-    const session = await attendanceRepository.getSession(sessionId);
-    if (!session) throw new Error('Sesi tidak ditemukan');
-    const students = await studentRepository.listByClass(session.classId);
-    const records = await attendanceRepository.listRecords(sessionId);
-    const recordMap = new Map(records.map((r) => [r.studentId, r]));
-    return students
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((student) => ({ student, record: recordMap.get(student.id) ?? null }));
+   async getSessionWithClass(id: string): Promise<{ session: AttendanceSession; cls: ClassRoom | undefined } | null> {
+     const session = await attendanceRepository.getSession(id);
+     if (!session) return null;
+     const cls = await classRepository.getById(session.classId);
+     return { session, cls };
+   }
+
+   async listStudentsInSession(sessionId: string): Promise<Array<{ student: Student; record: AttendanceRecord | null }>> {
+     const session = await attendanceRepository.getSession(sessionId);
+     if (!session) throw new Error('Sesi tidak ditemukan');
+     const students = session.classId
+       ? await studentRepository.listByClass(session.classId)
+       : await studentRepository.list();
+     const records = await attendanceRepository.listRecords(sessionId);
+     const recordMap = new Map(records.map((r) => [r.studentId, r]));
+     return students
+       .sort((a, b) => a.name.localeCompare(b.name))
+       .map((student) => ({ student, record: recordMap.get(student.id) ?? null }));
+   }
+
+  async listPrayerStudentsInSession(sessionId: string): Promise<Array<{ student: Student; record: AttendanceRecord | null }>> {
+    return this.listStudentsInSession(sessionId);
   }
 
   async runLivenessIfEnabled(video: HTMLVideoElement, config: AttendanceConfig): Promise<{ ok: boolean; reason?: string }> {
@@ -163,6 +284,22 @@ export class AttendanceService {
     });
   }
 
+  async recordPrayerAttendance(
+    sessionId: string,
+    studentId: string,
+    confidence: number,
+    prayerConfig: PrayerConfig,
+    prayerName: PrayerName
+  ): Promise<AttendanceRecord> {
+    const status = determineAutoStatusForPrayer(prayerConfig, prayerName);
+    return attendanceRepository.recordAttendance({
+      sessionId,
+      studentId,
+      status,
+      confidence
+    });
+  }
+
   async markManual(
     sessionId: string,
     studentId: string,
@@ -190,6 +327,14 @@ export class AttendanceService {
 
   async listSessions(): Promise<AttendanceSession[]> {
     return attendanceRepository.listSessions();
+  }
+
+  async listPrayerSessions(date: string): Promise<AttendanceSession[]> {
+    return attendanceRepository.listPrayerSessions(date);
+  }
+
+  async getPrayerSession(date: string, prayerName: PrayerName): Promise<AttendanceSession | undefined> {
+    return attendanceRepository.getPrayerSession(date, prayerName);
   }
 
   async getSession(id: string): Promise<AttendanceSession | undefined> {

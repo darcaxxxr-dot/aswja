@@ -303,7 +303,7 @@ export async function renderDbTest(root: HTMLElement): Promise<void> {
       return;
     }
     try {
-      const ses = await attendanceRepository.createSession({ classId, date, createdBy });
+      const ses = await attendanceRepository.createSession({ classId, date, createdBy, sessionType: 'CLASS' });
       log(`Sesi dibuka: ${ses.id} (date=${ses.date})`);
       await Promise.all([renderCounts(), renderSessions()]);
     } catch (err: unknown) {

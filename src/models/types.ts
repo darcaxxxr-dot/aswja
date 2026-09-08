@@ -43,6 +43,10 @@ export type AttendanceStatus = 'HADIR' | 'TERLAMBAT' | 'IZIN' | 'SAKIT' | 'ALPA'
 
 export type SessionStatus = 'open' | 'closed';
 
+export type SessionType = 'CLASS' | 'PRAYER';
+
+export type PrayerName = 'SUBUH' | 'DHUHUR' | 'ASHAR' | 'MAGHRIB' | 'ISYA';
+
 export interface AttendanceSession {
   id: string;
   schoolId: string;
@@ -51,6 +55,8 @@ export interface AttendanceSession {
   startTime: number;
   endTime?: number;
   status: SessionStatus;
+  sessionType: SessionType;
+  prayerName?: PrayerName;
   createdBy: string;
   createdAt: number;
   deletedAt?: number;

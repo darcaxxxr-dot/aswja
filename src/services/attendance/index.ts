@@ -1,2 +1,2 @@
-export { attendanceService, AttendanceService, attendanceConfigService, AttendanceConfigService, determineAutoStatus, DEFAULT_ATTENDANCE_CONFIG } from './attendanceService';
+export { attendanceService, AttendanceService, attendanceConfigService, AttendanceConfigService, prayerConfigService, PrayerConfigService, determineAutoStatus, determineAutoStatusForPrayer, DEFAULT_ATTENDANCE_CONFIG } from './attendanceService';
 export type { AttendanceConfig } from './attendanceService';
