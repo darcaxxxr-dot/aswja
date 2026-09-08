@@ -130,15 +130,12 @@ export interface ScanCallbacks {
 }
 
 export async function startScanning(
-  videoElement: HTMLVideoElement,
+  containerId: string,
   callbacks: ScanCallbacks
 ): Promise<ScanHandle> {
   const { Html5Qrcode } = await import('html5-qrcode');
-  // Use a stable ID tied to the element to avoid elementId collisions
-  const stableId = videoElement.id || `qr-scanner-${Math.random().toString(36).slice(2, 8)}`;
-  videoElement.id = stableId;
 
-  const scanner = new Html5Qrcode(stableId, /* verbose */ false);
+  const scanner = new Html5Qrcode(containerId, /* verbose */ false);
 
   try {
     await scanner.start(

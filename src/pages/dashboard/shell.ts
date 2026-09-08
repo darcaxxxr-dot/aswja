@@ -636,21 +636,14 @@ async function showScanModal() {
 
   const scanEl = document.getElementById('qr-scanner-el');
   if (!scanEl) return;
-  // Convert div to video for camera stream
-  scanEl.id = 'qr-scan-video-target';
-  const video = document.createElement('video');
-  video.id = 'qr-scan-video-target';
-  video.setAttribute('playsinline', 'true');
-  video.muted = true;
-  video.style.cssText = 'width:100%;height:100%;object-fit:cover;';
-  scanEl.replaceWith(video);
+  const containerId = 'qr-scanner-el';
 
   const { startScanning, decodePayload, applyPayload } = await import('@services/sync/qrLinkingService');
   let scanHandle: { stop: () => Promise<void> } | null = null;
     let handled = false;
 
   try {
-    scanHandle = await startScanning(video, {
+    scanHandle = await startScanning(containerId, {
       onResult: (text: string) => {
         if (handled) return;
         const payload = decodePayload(text);
