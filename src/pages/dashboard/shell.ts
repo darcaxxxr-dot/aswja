@@ -572,7 +572,7 @@ async function showQrModal() {
         <button id="qr-close" style="position:absolute;top:8px;right:8px;background:transparent;border:none;font-size:24px;cursor:pointer;color:#64748b;line-height:1;padding:4px 8px;">&times;</button>
         <div style="font-size:14px;color:#64748b;margin-bottom:6px;">📱 TAMPILKAN QR UNTUK LINKING</div>
         <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Pindai dari device baru</h3>
-        <div id="qr-canvas-wrap" style="display:flex;justify-content:center;padding:8px;background:#f1f5f9;border-radius:12px;min-height:240px;align-items:center;">
+        <div id="qr-canvas-wrap" style="display:flex;justify-content:center;padding:8px;background:#f1f5f9;border-radius:12px;width:280px;height:280px;margin:0 auto;align-items:center;">
           <div style="color:#64748b;font-size:13px;">Membuat QR...</div>
         </div>
         <div id="qr-info" style="margin-top:12px;font-size:12px;color:#475569;line-height:1.5;"></div>
@@ -623,11 +623,11 @@ async function showScanModal() {
         <button id="qr-close" style="position:absolute;top:8px;right:8px;background:transparent;border:none;font-size:24px;cursor:pointer;color:#64748b;line-height:1;padding:4px 8px;">&times;</button>
         <div style="font-size:14px;color:#64748b;margin-bottom:6px;">📷 PINDAI QR</div>
         <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Arahkan kamera ke QR device lain</h3>
-        <div id="qr-scanner-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:1/1;">
+        <div id="qr-scanner-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;width:280px;height:280px;margin:0 auto;">
           <div id="qr-scanner-el" style="width:100%;height:100%;"></div>
           <div id="qr-scanner-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.7);font-size:13px;background:rgba(0,0,0,0.4);">Meminta izin kamera...</div>
         </div>
-        <div id="qr-scan-info" style="margin-top:10px;font-size:12px;color:#475569;line-height:1.5;text-align:center;">Posisikan QR di tengah frame persegi</div>
+        <div id="qr-scan-info" style="margin-top:10px;font-size:12px;color:#475569;line-height:1.5;text-align:center;">Posisikan QR di tengah frame persegi (280×280)</div>
         <div id="qr-scan-error" style="margin-top:6px;font-size:12px;color:#dc2626;line-height:1.4;text-align:center;display:none;"></div>
       </div>
     </div>
