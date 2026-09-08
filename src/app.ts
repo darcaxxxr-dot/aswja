@@ -3,6 +3,8 @@ import { router } from '@router/index';
 import { initDashboardAndShell, pageNotFound, initInstallPrompt, initOfflineIndicator, initSyncIndicator } from '@pages/dashboard/shell';
 import { getOrCreateDeviceId, getOrCreateSchoolId } from '@utils/device';
 import { databaseService } from '@services/database/index';
+import { authService } from '@services/auth/index';
+import { syncService } from '@services/sync/index';
 import { BRAND } from '@config/brand';
 
 const PROTECTED_PATHS = ['/dashboard', '/students', '/enrollment', '/classes', '/attendance', '/reports', '/settings', '/supabase-test', '/face-test', '/db-test', '/camera-test'];
@@ -50,51 +52,38 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
       resolve();
     });
   }).then((): void => {
-    console.info('[bootstrap] phase 2: lazy loading auth + sync');
-    // Lazy-load auth + sync services after first paint to reduce main bundle blocking time
-    void (async () => {
+    console.info('[bootstrap] phase 2: init auth + sync');
+    authService.init();
+    initSyncIndicator();
+
+    // Start auto-sync on app boot
+    try {
+      syncService.startAutoSync(30000);
+      console.info('[bootstrap] Auto-sync started (30s interval)');
+    } catch (err: unknown) {
+      console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Initial pull from Supabase on startup if online
+    if (navigator.onLine) {
       try {
-        const [{ authService }, { syncService }] = await Promise.all([
-          import('@services/auth/index'),
-          import('@services/sync/index')
-        ]);
-        console.info('[bootstrap] auth + sync loaded');
-
-        authService.init();
-        initSyncIndicator();
-
-        // Start auto-sync on app boot
-        try {
-          await syncService.startAutoSync(30000);
-          console.info('[bootstrap] Auto-sync started (30s interval)');
-        } catch (err: unknown) {
-          console.warn(`[bootstrap] auto-sync start failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
-
-        // Initial pull from Supabase on startup if online
-        if (navigator.onLine) {
-          try {
-            await syncService.runFullSync();
-            console.info('[bootstrap] Initial sync completed');
-          } catch (err: unknown) {
-            console.warn(`[bootstrap] initial sync failed: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-
-        authService.onAuthStateChange(async (user) => {
-          if (!authService.isInitialSessionResolved()) return;
-          const path = window.location.pathname;
-          if (!user && isProtectedPath(path)) {
-            window.history.replaceState({}, '', '/login');
-            router.navigate('/login');
-          } else if (user && (path === '/login' || path === '/')) {
-            window.history.replaceState({}, '', '/dashboard');
-            router.navigate('/dashboard');
-          }
-        });
+        syncService.runFullSync();
+        console.info('[bootstrap] Initial sync completed');
       } catch (err: unknown) {
-        console.error(`[bootstrap] critical services load failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(`[bootstrap] initial sync failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-    })();
+    }
+
+    authService.onAuthStateChange(async (user) => {
+      if (!authService.isInitialSessionResolved()) return;
+      const path = window.location.pathname;
+      if (!user && isProtectedPath(path)) {
+        window.history.replaceState({}, '', '/login');
+        router.navigate('/login');
+      } else if (user && (path === '/login' || path === '/')) {
+        window.history.replaceState({}, '', '/dashboard');
+        router.navigate('/dashboard');
+      }
+    });
   });
 }

@@ -19,6 +19,10 @@ export interface AppSettings {
     modelVersion: string;
     minQualityScore: number;
   };
+  sound: {
+    enabled: boolean;
+    volume: number;
+  };
   sync: {
     autoEnabled: boolean;
     intervalMs: number;
@@ -43,6 +47,8 @@ const KEYS = {
   faceThreshold: 'face.threshold',
   faceModelVersion: 'face.modelVersion',
   faceMinQualityScore: 'face.minQualityScore',
+  soundEnabled: 'sound.enabled',
+  soundVolume: 'sound.volume',
   syncAutoEnabled: 'sync.autoEnabled',
   syncIntervalMs: 'sync.intervalMs'
 } as const;
@@ -62,6 +68,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     threshold: 0.8,
     modelVersion: 'face-api-tiny-v1',
     minQualityScore: 0.4
+  },
+  sound: {
+    enabled: true,
+    volume: 0.7
   },
   sync: {
     autoEnabled: true,
@@ -112,6 +122,10 @@ export class SettingsService {
         modelVersion: stored[7] ?? 'face-api-tiny-v1',
         minQualityScore: stored[8] ? parseFloat(stored[8]!) : 0.4
       },
+      sound: {
+        enabled: true,
+        volume: 0.7
+      },
       sync: {
         autoEnabled: stored[9] === 'true',
         intervalMs: stored[10] ? parseInt(stored[10]!, 10) : 30000,
@@ -131,6 +145,7 @@ export class SettingsService {
     schoolName?: string;
     attendance?: Partial<AppSettings['attendance']>;
     face?: Partial<AppSettings['face']>;
+    sound?: Partial<AppSettings['sound']>;
     sync?: Partial<AppSettings['sync']>;
   }): Promise<void> {
     if (updates.schoolName !== undefined) {
@@ -149,6 +164,11 @@ export class SettingsService {
       if (f.threshold !== undefined) await settingRepository.set(KEYS.faceThreshold, String(f.threshold));
       if (f.modelVersion !== undefined) await settingRepository.set(KEYS.faceModelVersion, f.modelVersion);
       if (f.minQualityScore !== undefined) await settingRepository.set(KEYS.faceMinQualityScore, String(f.minQualityScore));
+    }
+    if (updates.sound) {
+      const s = updates.sound;
+      if (s.enabled !== undefined) await settingRepository.set('sound.enabled', String(s.enabled));
+      if (s.volume !== undefined) await settingRepository.set('sound.volume', String(s.volume));
     }
     if (updates.sync) {
       const s = updates.sync;

@@ -9,7 +9,7 @@ if (!root) {
 function hideSplash() {
   const splash = document.getElementById('initial-splash');
   if (splash) {
-    splash.classList.add('hidden');
+    splash.style.display = 'none';
     // Remove from DOM after transition (200ms)
     setTimeout(() => splash.remove(), 300);
   }

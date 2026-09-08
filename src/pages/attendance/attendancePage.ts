@@ -3,6 +3,7 @@ import { faceModelLoader, FaceError } from '@services/face';
 import { attendanceService, attendanceConfigService, determineAutoStatus } from '@services/attendance';
 import { classRepository, studentRepository, faceProfileRepository } from '@repositories/index';
 import { formatTime } from '@utils/device';
+import { soundService } from '@services/sound';
 import type { AttendanceRecord, AttendanceSession, AttendanceStatus, ClassRoom, Student } from '@models/types';
 
 interface StudentRow {
@@ -324,7 +325,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
     thresholdVal.textContent = cfg.threshold.toFixed(2);
   };
 
-  const startLoop = async () => {
+const startLoop = async () => {
     if (!currentSession) {
       log('Buka sesi dulu.');
       return;
@@ -347,6 +348,7 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
         if (!liveness.ok) {
           recogInfo.textContent = `Liveness gagal: ${liveness.reason}`;
           showScanFeedback('liveness', 'Liveness Gagal', liveness.reason ?? 'coba lagi', 2000);
+          await soundService.play('attendance-retry');
         }
         if (result) {
           drawBox(
@@ -358,25 +360,25 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
             ? `Match: <strong>${result.candidate.label}</strong> (${result.candidate.score.toFixed(3)}) · ${result.durationMs.toFixed(0)}ms`
             : `No match · ${result.durationMs.toFixed(0)}ms`;
 
-          if (result.matched && result.candidate) {
+if (result.matched && result.candidate) {
             const student = rows.find((r) => r.student.name === result.candidate!.label)?.student;
             if (student) {
               if (student.classId !== currentSession!.classId) {
                 log(`⚠ ${student.name} bukan anggota kelas ini.`);
                 showScanFeedback('error', 'Kelas Tidak Cocok', `${student.name} bukan anggota kelas ini`, 2500);
               } else {
-                // Cek dulu apakah sudah absen
                 const existing = rows.find((r) => r.student.id === student.id)?.record;
-                try {
-                  if (existing) {
-                    showScanFeedback(
-                      'duplicate',
-                      'Sudah Absen',
-                      `${student.name}, sudah melakukan absen (${existing.status})`,
-                      3000
-                    );
-                    log(`⚠ ${student.name} sudah absen (${existing.status}).`);
-                  } else {
+                if (existing) {
+                  showScanFeedback(
+                    'duplicate',
+                    'Sudah Absen',
+                    `${student.name}, sudah melakukan absen (${existing.status})`,
+                    3000
+                  );
+                  log(`⚠ ${student.name} sudah absen (${existing.status}).`);
+                  await soundService.play('attendance-already');
+                } else {
+                  try {
                     const rec = await attendanceService.recordAttendance(currentSession.id, student.id, result.candidate.score);
                     showScanFeedback(
                       'success',
@@ -385,9 +387,20 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
                       3000
                     );
                     log(`✓ ${student.name} → ${rec.status} @ ${formatTime(rec.timestamp)}`);
+                    await soundService.play('attendance-ok');
+                  } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Unknown error';
+                    if (msg.toLowerCase().includes('sudah')) {
+                      showScanFeedback('duplicate', 'Sudah Absen', `${student.name}, sudah melakukan absen`, 3000);
+                      log(`⚠ ${student.name} sudah diabsen.`);
+                      await soundService.play('attendance-already');
+                    } else {
+                      showScanFeedback('error', 'Gagal', msg, 3000);
+                      log(`ERROR record: ${msg}`);
+                      await soundService.play('attendance-retry');
+                    }
                   }
                   await refreshTable();
-                  // Cooldown 3 detik: pause recognition supaya user bisa lihat feedback
                   isRunning = false;
                   recogInfo.textContent = '⏸ Cooldown 3 detik...';
                   runRaf = window.setTimeout(() => {
@@ -396,30 +409,22 @@ export async function renderAttendance(root: HTMLElement): Promise<void> {
                     runRaf = window.setTimeout(loop, 400);
                   }, 3000);
                   return;
-                } catch (err: unknown) {
-                  const msg = err instanceof Error ? err.message : 'Unknown error';
-                  if (msg.toLowerCase().includes('sudah')) {
-                    showScanFeedback('duplicate', 'Sudah Absen', `${student.name}, sudah melakukan absen`, 3000);
-                    log(`⚠ ${student.name} sudah diabsen.`);
-                  } else {
-                    showScanFeedback('error', 'Gagal', msg, 3000);
-                    log(`ERROR record: ${msg}`);
-                  }
                 }
               }
             }
-          }
-        } else {
-          clearOverlay();
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log(`ERROR loop: ${msg}`);
-      }
-      runRaf = window.setTimeout(loop, 600);
+           } else {
+             clearOverlay();
+           }
+         }
+       } catch (err: unknown) {
+         const msg = err instanceof Error ? err.message : 'Unknown error';
+         log(`ERROR loop: ${msg}`);
+         await soundService.play('attendance-retry');
+       }
+       runRaf = window.setTimeout(loop, 600);
+     };
+      loop();
     };
-    loop();
-  };
 
   const stopLoop = () => {
     isRunning = false;

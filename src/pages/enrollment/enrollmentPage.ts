@@ -7,6 +7,7 @@ import { classRepository } from '@repositories/classRepository';
 import { faceProfileRepository } from '@repositories/faceProfileRepository';
 import { formatTime } from '@utils/device';
 import { FACE_CONFIG } from '@config/app';
+import { soundService } from '@services/sound';
 import type { Student, ClassRoom } from '@models/types';
 
 export async function renderEnrollment(root: HTMLElement): Promise<void> {
@@ -486,6 +487,9 @@ export async function renderEnrollment(root: HTMLElement): Promise<void> {
           `<div style="margin-top:8px;color:var(--color-success);"><strong>✓ Enrollment selesai.</strong> ` +
           `Avg quality: ${result.avgQuality.toFixed(2)}, ${result.profiles.length} profile tersimpan.${bypassMsg}</div>`);
         log(`✓ Enrollment ${student.name} selesai. Quality=${result.avgQuality.toFixed(2)}${bypassMsg}`);
+
+        // Play success sound
+        await soundService.play('enrollment-success');
 
         // Tampilkan notifikasi "selesai" di overlay & mulai hitung mundur 5 detik auto-close
         showOverlay('✓ Enrollment Selesai', 'Kamera akan otomatis berhenti dalam 5 detik...');

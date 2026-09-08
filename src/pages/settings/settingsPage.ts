@@ -3,12 +3,14 @@ import { settingsService, type AppSettings } from '@services/settings/index';
 import { syncService, setSupabaseRuntimeConfig, clearSupabaseRuntimeConfig } from '@services/sync/index';
 import { authService, type AppUser } from '@services/auth/index';
 import { databaseService } from '@services/database/index';
+import { soundService } from '@services/sound';
 import { formatTime, setSchoolIdOverride, clearSchoolIdOverride, isValidUuid } from '@utils/device';
 
 const SECTIONS: Array<{ key: keyof AppSettings; label: string; desc: string }> = [
   { key: 'schoolName', label: 'Nama Sekolah', desc: 'Ditampilkan di header & laporan.' },
   { key: 'attendance', label: 'Aturan Absensi', desc: 'Window HADIR / TERLAMBAT + liveness.' },
   { key: 'face', label: 'Pengenalan Wajah', desc: 'Threshold & model version.' },
+  { key: 'sound', label: 'Sound Effects', desc: 'Toggle suara enrollment & absensi.' },
   { key: 'sync', label: 'Sinkronisasi', desc: 'Auto-sync ke Supabase.' },
   { key: 'supabase', label: 'Supabase Connection', desc: 'Status koneksi (read-only).' }
 ];
@@ -105,6 +107,27 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
             </label>
             <button class="btn btn-primary" id="btn-save-face">Simpan</button>
           </div>
+        </section>
+
+        <section class="card stack" id="section-sound">
+          <h3 style="margin:0;">Sound Effects</h3>
+          <p class="muted" style="margin:0;font-size:13px;">${SECTIONS[3].desc}</p>
+          <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;">
+            <label class="row" style="gap:6px;flex:1;min-width:240px;">
+              <input id="cfg-sound-enabled" type="checkbox" ${s.sound?.enabled !== false ? 'checked' : ''} />
+              Aktifkan Sound Effects
+            </label>
+            <select id="cfg-sound-volume" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;width:140px;">
+              <option value="0.3" ${s.sound?.volume === 0.3 ? 'selected' : ''}>Rendah (30%)</option>
+              <option value="0.5" ${s.sound?.volume === 0.5 ? 'selected' : ''}>Sedang (50%)</option>
+              <option value="0.7" ${s.sound?.volume === 0.7 ? 'selected' : ''}>Normal (70%)</option>
+              <option value="1.0" ${s.sound?.volume === 1.0 ? 'selected' : ''}>Maksimum (100%)</option>
+            </select>
+            <label class="row" style="gap:6px;">
+              <span style="color:#94a3b8;font-size:12px;">Volume:</span>
+            </label>
+          </div>
+          <button class="btn btn-primary" id="btn-save-sound" style="margin-top:8px;">Simpan Sound Settings</button>
         </section>
 
         <section class="card stack" id="section-sync">
@@ -246,6 +269,17 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
         face: { threshold, minQualityScore: quality, modelVersion: model }
       });
       log('Face settings disimpan.');
+      await refresh();
+    });
+
+    root.querySelector<HTMLButtonElement>('#btn-save-sound')?.addEventListener('click', async () => {
+      const enabled = root.querySelector<HTMLInputElement>('#cfg-sound-enabled')!.checked;
+      const volume = parseFloat(root.querySelector<HTMLSelectElement>('#cfg-sound-volume')!.value);
+      await settingsService.save({
+        sound: { enabled, volume }
+      });
+      soundService.setEnabled(enabled);
+      log('Sound settings disimpan.');
       await refresh();
     });
 

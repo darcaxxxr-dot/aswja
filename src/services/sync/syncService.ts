@@ -304,6 +304,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
 export class SyncService {
   private intervalId: number | null = null;
   private listeners: Array<(status: SyncStatusInfo) => void> = [];
+  private schemaCache: Record<string, Set<string>> = {};
 
   onStatusChange(listener: (status: SyncStatusInfo) => void): () => void {
     this.listeners.push(listener);
@@ -316,6 +317,20 @@ export class SyncService {
   private async emit(): Promise<void> {
     const status = await this.getStatus();
     for (const l of this.listeners) l(status);
+  }
+
+  private async getExistingColumns(table: string): Promise<Set<string>> {
+    if (this.schemaCache[table]) return this.schemaCache[table];
+    const client = getSupabaseClient();
+    if (!client) return new Set();
+    try {
+      const { data } = await client.from('information_schema.columns').select('column_name').eq('table_name', table).eq('table_schema', 'public');
+      const cols = new Set((data ?? []).map((r: { column_name: string }) => r.column_name));
+      this.schemaCache[table] = cols;
+      return cols;
+    } catch {
+      return new Set();
+    }
   }
 
   async getStatus(): Promise<SyncStatusInfo> {
@@ -384,7 +399,11 @@ export class SyncService {
       });
 
       // Dapatkan kolom yang valid untuk tabel ini
-      const columns = getCloudColumns(t.local);
+      let columns = getCloudColumns(t.local);
+      const existingCols = await this.getExistingColumns(t.cloud);
+      if (existingCols.size > 0) {
+        columns = columns.filter((c) => existingCols.has(c));
+      }
 
       try {
         const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);

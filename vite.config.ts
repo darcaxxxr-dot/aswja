@@ -47,6 +47,9 @@ export default defineConfig({
           if (id.includes('node_modules/zod')) {
             return 'vendor-zod';
           }
+          if (id.includes('src/repositories/index.ts') || id.includes('src/repositories/')) {
+            return 'vendor-repositories';
+          }
           if (id.includes('node_modules/')) {
             return 'vendor-other';
           }
@@ -160,6 +163,16 @@ export default defineConfig({
                 maxEntries: 8,
                 maxAgeSeconds: 60 * 60 * 24 * 7
               }
+            }
+          },
+          {
+            // Sound files — CacheFirst untuk fast playback, cache 1 tahun
+            urlPattern: /\/sounds\/.+/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'smartface-sounds',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
             }
           }
         ]
