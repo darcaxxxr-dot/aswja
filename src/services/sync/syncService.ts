@@ -2,7 +2,7 @@ import { db } from '@services/database/dexieSchema';
 import { settingRepository } from '@repositories/index';
 import { getOrCreateSchoolId } from '@utils/device';
 import { getSupabaseClient, SupabaseError, cloudSelect, cloudUpsert } from './supabaseClient';
-import type { ClassRoom, Student, FaceProfile, AttendanceSession, AttendanceRecord, AcademicYear, School } from '@models/types';
+import type { ClassRoom, Student, FaceProfile, AttendanceSession, AttendanceRecord, AcademicYear, School, SessionType, PrayerName } from '@models/types';
 
 export interface SyncReport {
   ok: boolean;
@@ -63,19 +63,19 @@ type TableRowMap = {
 function getCloudColumns(table: TableKey): string[] {
   switch (table) {
     case 'schools':
-      return ['id', 'name', 'created_at', 'deleted_at'];
+      return ['id', 'name', 'created_at', 'updated_at', 'deleted_at'];
     case 'academicYears':
-      return ['id', 'name', 'school_id', 'start_date', 'end_date', 'is_active', 'created_at', 'deleted_at'];
+      return ['id', 'name', 'school_id', 'start_date', 'end_date', 'is_active', 'created_at', 'updated_at', 'deleted_at'];
     case 'classes':
-      return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at', 'deleted_at'];
+      return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at', 'updated_at', 'deleted_at'];
     case 'students':
       return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at', 'updated_at', 'deleted_at'];
     case 'faceProfiles':
       return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at', 'deleted_at'];
     case 'attendanceSessions':
-      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'session_type', 'prayer_name', 'created_by', 'created_at', 'deleted_at'];
+      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'session_type', 'prayer_name', 'created_by', 'created_at', 'updated_at', 'deleted_at'];
     case 'attendanceRecords':
-      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_at', 'deleted_at'];
+      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_at', 'updated_at', 'deleted_at'];
     default:
       return [];
   }
@@ -85,11 +85,12 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
   const out: Record<string, unknown> = {};
 
   switch (table) {
-    case 'schools': {
+     case 'schools': {
       const r = row as School;
       out.id = r.id;
       out.name = r.name;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
@@ -102,6 +103,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.end_date = r.endDate;
       out.is_active = r.isActive;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
@@ -113,6 +115,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.grade = r.grade;
       out.name = r.name;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
@@ -152,12 +155,15 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.start_time = new Date(r.startTime).toISOString();
       if (r.endTime) out.end_time = new Date(r.endTime).toISOString();
       out.status = r.status;
+      out.session_type = r.sessionType;
+      if (r.prayerName) out.prayer_name = r.prayerName;
       out.created_by = r.createdBy;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
-    case 'attendanceRecords': {
+     case 'attendanceRecords': {
       const r = row as AttendanceRecord;
       out.id = r.id;
       out.school_id = r.schoolId;
@@ -168,6 +174,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.confidence = r.confidence;
       out.device_id = r.deviceId;
       out.created_at = new Date(r.createdAt).toISOString();
+      if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
       break;
     }
@@ -212,7 +219,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       deletedAt
     } as unknown as T;
   }
-  if (table === 'attendanceSessions') {
+   if (table === 'attendanceSessions') {
     const s = processed as Record<string, unknown> & { classId: string; date: string; status: string; createdBy: string };
     return {
       id,
@@ -222,6 +229,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       startTime: s.start_time ? new Date(String(s.start_time)).getTime() : Date.now(),
       endTime: s.end_time ? new Date(String(s.end_time)).getTime() : undefined,
       status: s.status as AttendanceSession['status'],
+      sessionType: (s.session_type as SessionType) ?? 'CLASS',
+      prayerName: (s.prayer_name as PrayerName | undefined) ?? undefined,
       createdBy: s.createdBy ?? '',
       createdAt,
       updatedAt,
@@ -275,7 +284,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
     } as unknown as T;
   }
 
-  if (table === 'academicYears') {
+   if (table === 'academicYears') {
     const a = processed as Record<string, unknown> & { name: string; startDate: string; endDate: string; isActive: boolean };
     return {
       id,
@@ -284,7 +293,9 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       startDate: a.startDate,
       endDate: a.endDate,
       isActive: a.isActive ?? false,
-      createdAt
+      createdAt,
+      updatedAt,
+      deletedAt
     } as unknown as T;
   }
 
@@ -294,7 +305,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       id,
       name: sh.name,
       createdAt,
-      updatedAt: createdAt
+      updatedAt,
+      deletedAt
     } as unknown as T;
   }
 
@@ -450,7 +462,7 @@ export class SyncService {
           // Check if local record belongs to different school (schoolId mismatch)
           // If schoolId changed (via override), always overwrite with cloud data
           const localSchoolId = local?.schoolId as string | undefined;
-          const schoolIdChanged = localSchoolId && localSchoolId !== schoolId;
+          const schoolIdChanged = localSchoolId != null && localSchoolId !== '' && localSchoolId !== schoolId;
 
           // Last-write-wins: skip only if local is newer AND schoolId matches
           // If schoolId changed, always overwrite with cloud data

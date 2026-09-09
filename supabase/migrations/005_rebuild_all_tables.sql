@@ -38,7 +38,8 @@ create table public.academic_years (
   start_date text not null,
   end_date text not null,
   is_active boolean not null default false,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 -- Classes
@@ -48,7 +49,8 @@ create table public.classes (
   academic_year_id text references public.academic_years(id) on delete set null,
   grade text not null,
   name text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 -- Students
@@ -85,8 +87,11 @@ create table public.attendance_sessions (
   start_time timestamptz not null default now(),
   end_time timestamptz,
   status text not null default 'open',
+  session_type text not null default 'CLASS',
+  prayer_name text,
   created_by text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 -- Attendance Records
@@ -99,7 +104,8 @@ create table public.attendance_records (
   status text not null,
   confidence numeric not null default 0,
   device_id text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 -- Users

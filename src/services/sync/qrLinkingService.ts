@@ -8,8 +8,10 @@
  * 4. App automatically does pull/push to sync
  */
 
-import { getOrCreateSchoolId } from '@utils/device';
+import { getOrCreateSchoolId, getBaseSchoolId } from '@utils/device';
 import { getSupabaseConfig, setSupabaseRuntimeConfig } from './supabaseClient';
+import { db } from '@services/database/dexieSchema';
+import { APP_CONFIG } from '@config/app';
 
 export interface DeviceLinkPayload {
   /** Schema version */
@@ -86,11 +88,56 @@ export function applyPayload(payload: DeviceLinkPayload): {
     // Set Supabase runtime config (URL + anon key)
     setSupabaseRuntimeConfig(payload.url, payload.key);
     // Set school ID override - same key used by manual School ID linking in sync panel
-    localStorage.setItem('sf_school_id_override', payload.schoolId);
+    localStorage.setItem(APP_CONFIG.schoolIdOverrideKey, payload.schoolId);
     return {
       ok: true,
       message: `Terhubung ke ${payload.schoolName ?? 'school ' + payload.schoolId.substring(0, 8)}. Refresh halaman untuk menerapkan.`
     };
+  } catch (e: unknown) {
+    return { ok: false, message: 'Gagal menyimpan konfigurasi: ' + (e instanceof Error ? e.message : String(e)) };
+  }
+}
+
+/**
+ * Async version of applyPayload that clears local IndexedDB data before setting the override.
+ * This prevents duplicate school IDs from coexisting in IndexedDB.
+ * - Clears all local data (db.resetAll)
+ * - Clears base school ID from localStorage
+ * - Sets Supabase runtime config (url + key)
+ * - Sets schoolId override
+ * - Returns descriptive result
+ */
+export async function applyPayloadWithReset(payload: DeviceLinkPayload): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  if (payload.v !== 1) {
+    return { ok: false, message: 'Versi QR tidak dikenali.' };
+  }
+  if (payload.ts && Date.now() - payload.ts > 5 * 60 * 1000) {
+    return { ok: false, message: 'QR sudah kadaluarsa (>5 menit). Minta QR baru dari device asal.' };
+  }
+  try {
+    const oldSchoolId = getBaseSchoolId();
+    const isFirstLink = !oldSchoolId;
+
+    // Clear localStorage keys (keep device_id, auth)
+    localStorage.removeItem(APP_CONFIG.schoolIdKey);
+
+    // Set Supabase runtime config (URL + anon key)
+    setSupabaseRuntimeConfig(payload.url, payload.key);
+
+    // Set school ID override - same key used by manual School ID linking in sync panel
+    localStorage.setItem(APP_CONFIG.schoolIdOverrideKey, payload.schoolId);
+
+    // Clear all local IndexedDB data to prevent duplicate school IDs
+    await db.resetAll();
+
+    const msg = isFirstLink
+      ? `Berhasil link ke ${payload.schoolName ?? 'school ' + payload.schoolId.substring(0, 8)}. Data akan di-fetch otomatis.`
+      : `Berhasil link ke ${payload.schoolName ?? 'school ' + payload.schoolId.substring(0, 8)}. Data lama dihapus, akan di-fetch otomatis.`;
+
+    return { ok: true, message: msg };
   } catch (e: unknown) {
     return { ok: false, message: 'Gagal menyimpan konfigurasi: ' + (e instanceof Error ? e.message : String(e)) };
   }

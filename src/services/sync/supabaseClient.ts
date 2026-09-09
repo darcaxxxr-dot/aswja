@@ -184,21 +184,36 @@ export async function cloudSelect<T = CloudRow>(
   // Tables that don't have a direct school_id column:
   // - 'schools' is the root entity itself
   // - 'face_profiles' links via student_id -> students.school_id
-  let q;
-  if (table === 'schools') {
-    q = client.from(table).select('*').eq('id', schoolId);
-  } else if (table === 'face_profiles') {
-    // face_profiles tidak punya school_id; join via students
-    q = client
-      .from(table)
-      .select('*, students!inner(school_id)')
-      .eq('students.school_id', schoolId);
-  } else {
-    q = client.from(table).select('*').eq('school_id', schoolId);
-  }
+   let q;
+   if (table === 'schools') {
+     q = client.from(table).select('*').eq('id', schoolId);
+   } else if (table === 'face_profiles') {
+     // face_profiles tidak punya school_id; join via students
+     q = client
+       .from(table)
+       .select('*, students!inner(school_id)')
+       .eq('students.school_id', schoolId);
+   } else {
+     q = client.from(table).select('*').eq('school_id', schoolId);
+   }
 
-  if (sinceIso) q = q.gt('updated_at', sinceIso);
-  const { data, error } = await q;
+   if (sinceIso) q = q.gt('updated_at', sinceIso);
+
+   // Soft-delete: exclude records where deleted_at IS NOT NULL (for tables that have the column)
+   const softDeleteTables = [
+     'academic_years',
+     'classes',
+     'students',
+     'face_profiles',
+     'attendance_sessions',
+     'attendance_records',
+     'users'
+   ];
+   if (softDeleteTables.includes(table)) {
+     q = q.is('deleted_at', null);
+   }
+
+   const { data, error } = await q;
   if (error) return { data: [], error: error.message };
   // Strip the joined students object from result rows
   const rows = (data as unknown as Record<string, unknown>[]) ?? [];

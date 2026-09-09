@@ -706,7 +706,7 @@ async function showScanModal() {
   if (!scanEl) return;
   const containerId = 'qr-scanner-el';
 
-  const { startScanning, decodePayload, applyPayload } = await import('@services/sync/qrLinkingService');
+  const { startScanning, decodePayload, applyPayloadWithReset } = await import('@services/sync/qrLinkingService');
   let scanHandle: { stop: () => Promise<void> } | null = null;
     let handled = false;
 
@@ -744,23 +744,32 @@ async function showScanModal() {
           return;
         }
         handled = true;
-        const result = applyPayload(payload);
-        const info = document.getElementById('qr-scan-info');
-        const errEl = document.getElementById('qr-scan-error');
-        if (result.ok) {
-          if (info) {
-            info.style.color = '#16a34a';
-            info.innerHTML = `<strong>✓ ${result.message}</strong><br><br>Memuat ulang dalam 1.5 detik...`;
+        void (async () => {
+          const result = await applyPayloadWithReset(payload);
+          const info = document.getElementById('qr-scan-info');
+          const errEl = document.getElementById('qr-scan-error');
+          if (result.ok) {
+            if (info) {
+              info.style.color = '#16a34a';
+              info.innerHTML = `<strong>✓ ${result.message}</strong><br><br>Menyinkronkan data...`;
+            }
+            void scanHandle?.stop();
+            setTimeout(async () => {
+              try {
+                await syncService.pullAll();
+              } catch {
+                // ignore
+              }
+              window.location.reload();
+            }, 1500);
+          } else {
+            if (errEl) {
+              errEl.textContent = result.message;
+              errEl.style.display = 'block';
+            }
+            handled = false; // allow re-scan
           }
-          void scanHandle?.stop();
-          setTimeout(() => window.location.reload(), 1500);
-        } else {
-          if (errEl) {
-            errEl.textContent = result.message;
-            errEl.style.display = 'block';
-          }
-          handled = false; // allow re-scan
-        }
+        })();
       },
       onError: (err: Error) => {
         const errEl = document.getElementById('qr-scan-error');

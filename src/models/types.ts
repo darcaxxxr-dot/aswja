@@ -59,6 +59,7 @@ export interface AttendanceSession {
   prayerName?: PrayerName;
   createdBy: string;
   createdAt: number;
+  updatedAt: number;
   deletedAt?: number;
 }
 
@@ -72,6 +73,7 @@ export interface AttendanceRecord {
   confidence: number;
   deviceId: string;
   createdAt: number;
+  updatedAt: number;
   deletedAt?: number;
 }
 

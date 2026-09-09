@@ -85,7 +85,7 @@ export class AttendanceRepository {
     return db.attendanceSessions.where('classId').equals(classId).toArray();
   }
 
-  async createSession(input: CreateSessionInput): Promise<AttendanceSession> {
+   async createSession(input: CreateSessionInput): Promise<AttendanceSession> {
     const ts = now();
     const row: AttendanceSession = {
       id: generateId('SES'),
@@ -97,7 +97,8 @@ export class AttendanceRepository {
       sessionType: input.sessionType,
       prayerName: input.prayerName,
       createdBy: input.createdBy,
-      createdAt: ts
+      createdAt: ts,
+      updatedAt: ts
     };
     await db.attendanceSessions.add(row);
     pushAsync();
@@ -107,10 +108,12 @@ export class AttendanceRepository {
   async closeSession(id: string): Promise<AttendanceSession> {
     const existing = await db.attendanceSessions.get(id);
     if (!existing) throw new Error(`Session ${id} not found`);
+    const ts = now();
     const updated: AttendanceSession = {
       ...existing,
       status: 'closed' as SessionStatus,
-      endTime: now()
+      endTime: ts,
+      updatedAt: ts
     };
     await db.attendanceSessions.put(updated);
     pushAsync();
@@ -147,7 +150,8 @@ export class AttendanceRepository {
       status: input.status,
       confidence: input.confidence,
       deviceId: getOrCreateDeviceId(),
-      createdAt: ts
+      createdAt: ts,
+      updatedAt: ts
     };
     await db.attendanceRecords.add(row);
     pushAsync();
@@ -157,7 +161,8 @@ export class AttendanceRepository {
   async updateRecordStatus(id: string, status: AttendanceStatus): Promise<AttendanceRecord> {
     const existing = await db.attendanceRecords.get(id);
     if (!existing) throw new Error(`Record ${id} not found`);
-    const updated: AttendanceRecord = { ...existing, status };
+    const ts = now();
+    const updated: AttendanceRecord = { ...existing, status, updatedAt: ts };
     await db.attendanceRecords.put(updated);
     pushAsync();
     return updated;
