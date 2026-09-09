@@ -609,9 +609,44 @@ async function showQrModal() {
   if (info) {
     const expiresAt = new Date(payload.ts + 5 * 60 * 1000);
     info.innerHTML =
-      `<div><strong>School ID:</strong> <code style="font-size:11px;">${payload.schoolId.substring(0, 8)}...</code></div>` +
-      `<div style="margin-top:4px;">QR berlaku sampai <strong>${expiresAt.toLocaleTimeString('id-ID')}</strong> (5 menit)</div>` +
-      `<div style="margin-top:4px;color:#94a3b8;font-size:11px;">Device pemindai akan otomatis sync data.</div>`;
+      `<div><strong>School ID:</strong> <code style="font-size:11px;">${payload.schoolId}</code></div>` +
+      `<div style="margin-top:8px;display:flex;gap:6px;justify-content:center;">` +
+        `<button id="btn-qr-copy-schoolid" style="background:#0ea572;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:11px;cursor:pointer;">📋 Copy School ID</button>` +
+        `<button id="btn-qr-link-manual" style="background:#0ea572;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:11px;cursor:pointer;">🔗 Link Manual</button>` +
+      `</div>` +
+      `<div style="margin-top:8px;font-size:11px;color:#94a3b8;line-height:1.4;">` +
+        `QR berlaku sampai <strong>${expiresAt.toLocaleTimeString('id-ID')}</strong> (5 menit).` +
+        `<br>Atau copy School ID di atas → buka Setting → Sync → paste di kotak School ID → klik Link.` +
+      `</div>`;
+
+    // Copy School ID button
+    const btnCopy = document.getElementById('btn-qr-copy-schoolid');
+    btnCopy?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(payload.schoolId);
+        const orig = btnCopy.textContent;
+        btnCopy.textContent = '✓ Tersalin!';
+        btnCopy.style.background = '#059669';
+        setTimeout(() => { btnCopy.textContent = orig; btnCopy.style.background = '#0ea572'; }, 1500);
+      } catch { /* ignore */ }
+    });
+
+    // Manual Link button - opens sync panel
+    const btnLink = document.getElementById('btn-qr-link-manual');
+    btnLink?.addEventListener('click', () => {
+      closeQrModal();
+      // Open sync panel programmatically
+      const syncBadge = document.getElementById('sync-badge');
+      syncBadge?.click();
+      // Focus the input after panel opens
+      setTimeout(() => {
+        const input = document.getElementById('input-schoolid') as HTMLInputElement | null;
+        if (input) {
+          input.value = payload.schoolId;
+          input.focus();
+        }
+      }, 200);
+    });
   }
 }
 
@@ -685,10 +720,10 @@ async function showScanModal() {
         if (result.ok) {
           if (info) {
             info.style.color = '#16a34a';
-            info.innerHTML = `<strong>✓ ${result.message}</strong><br><br>Memuat ulang dalam 2 detik...`;
+            info.innerHTML = `<strong>✓ ${result.message}</strong><br><br>Memuat ulang dalam 1.5 detik...`;
           }
           void scanHandle?.stop();
-          setTimeout(() => window.location.reload(), 2000);
+          setTimeout(() => window.location.reload(), 1500);
         } else {
           if (errEl) {
             errEl.textContent = result.message;

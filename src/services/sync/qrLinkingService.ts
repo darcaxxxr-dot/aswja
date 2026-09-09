@@ -83,11 +83,13 @@ export function applyPayload(payload: DeviceLinkPayload): {
     return { ok: false, message: 'QR sudah kadaluarsa (>5 menit). Minta QR baru dari device asal.' };
   }
   try {
+    // Set Supabase runtime config (URL + anon key)
     setSupabaseRuntimeConfig(payload.url, payload.key);
+    // Set school ID override - same key used by manual School ID linking in sync panel
     localStorage.setItem('sf_school_id_override', payload.schoolId);
     return {
       ok: true,
-      message: `Terhubung ke ${payload.schoolName ?? 'school ' + payload.schoolId.substring(0, 8)}. Halaman akan direfresh.`
+      message: `Terhubung ke ${payload.schoolName ?? 'school ' + payload.schoolId.substring(0, 8)}. Refresh halaman untuk menerapkan.`
     };
   } catch (e: unknown) {
     return { ok: false, message: 'Gagal menyimpan konfigurasi: ' + (e instanceof Error ? e.message : String(e)) };
