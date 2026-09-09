@@ -43,6 +43,7 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
     ? `<span id="user-badge" title="${user.email ?? ''} · ${ROLE_LABELS[user.role]}${user.subRole ? ' · ' + SUBROLE_LABELS[user.subRole] : ''}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${user.displayName} · ${ROLE_LABELS[user.role]}${user.subRole ? '/' + SUBROLE_LABELS[user.subRole] : ''}</span>`
     : `<a id="user-badge" href="/login" data-link style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;text-decoration:none;">Login</a>`;
   const installBtn = `<button id="btn-install" class="btn" style="display:none;background:#16a34a;color:#fff;padding:6px 10px;min-height:32px;font-size:13px;">Install App</button>`;
+  const versionBadge = `<span id="version-badge" style="background:rgba(255,255,255,0.08);color:#94a3b8;padding:2px 8px;border-radius:8px;font-size:10px;margin-right:6px;font-family:monospace;white-space:nowrap;">v${__APP_VERSION__} · ${__BUILD_TIMESTAMP__}</span>`;
 
   // Sync panel (hidden by default, shown when sync badge clicked)
   const syncPanel = `
@@ -67,7 +68,7 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
           ASWJA
         </h1>
         <div class="header-right">
-          ${offlineBadge}${syncBadge}${userBadge}${installBtn}
+          ${versionBadge}${offlineBadge}${syncBadge}${userBadge}${installBtn}
         </div>
       </div>
       <nav class="app-nav" id="app-nav">${nav}</nav>

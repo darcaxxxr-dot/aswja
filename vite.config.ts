@@ -2,7 +2,14 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Build timestamp untuk version tracking
+const buildTimestamp = new Date().toISOString().replace('T', ' ').substring(0, 19); // YYYY-MM-DD HH:MM:SS
+
 export default defineConfig({
+  define: {
+    __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+    __APP_VERSION__: JSON.stringify('1.0.0')
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
