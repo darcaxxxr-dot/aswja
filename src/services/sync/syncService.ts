@@ -304,7 +304,7 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
 export class SyncService {
   private intervalId: number | null = null;
   private listeners: Array<(status: SyncStatusInfo) => void> = [];
-  private schemaCache: Record<string, Set<string>> = {};
+  // Removed schemaCache - using hardcoded columns instead
 
   onStatusChange(listener: (status: SyncStatusInfo) => void): () => void {
     this.listeners.push(listener);
@@ -319,19 +319,8 @@ export class SyncService {
     for (const l of this.listeners) l(status);
   }
 
-  private async getExistingColumns(table: string): Promise<Set<string>> {
-    if (this.schemaCache[table]) return this.schemaCache[table];
-    const client = getSupabaseClient();
-    if (!client) return new Set();
-    try {
-      const { data } = await client.from('information_schema.columns').select('column_name').eq('table_name', table).eq('table_schema', 'public');
-      const cols = new Set((data ?? []).map((r: { column_name: string }) => r.column_name));
-      this.schemaCache[table] = cols;
-      return cols;
-    } catch {
-      return new Set();
-    }
-  }
+  // REMOVED: getExistingColumns - Supabase REST API doesn't allow information_schema queries
+  // Using hardcoded CLOUD_COLUMNS instead
 
   async getStatus(): Promise<SyncStatusInfo> {
     const [lastSyncAtStr, lastError, queueCount] = await Promise.all([
@@ -398,12 +387,8 @@ export class SyncService {
         return row;
       });
 
-      // Dapatkan kolom yang valid untuk tabel ini
-      let columns = getCloudColumns(t.local);
-      const existingCols = await this.getExistingColumns(t.cloud);
-      if (existingCols.size > 0) {
-        columns = columns.filter((c) => existingCols.has(c));
-      }
+      // Use hardcoded columns directly (no information_schema query needed)
+      const columns = getCloudColumns(t.local);
 
       try {
         const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
@@ -447,9 +432,9 @@ export class SyncService {
         // Last-write-wins: hanya overwrite local jika cloud updatedAt lebih baru
         const tableRef = db[t.local] as unknown as { bulkGet: (ids: string[]) => Promise<unknown[]>; bulkPut: (rows: unknown[]) => Promise<unknown> };
         const incomingIds = rows.map((r) => String((r as { id: unknown }).id));
-        let localRows: Array<{ id: string; updatedAt?: number; createdAt?: number }> = [];
+        let localRows: Array<{ id: string; updatedAt?: number; createdAt?: number; schoolId?: string }> = [];
         try {
-          localRows = (await tableRef.bulkGet(incomingIds)) as Array<{ id: string; updatedAt?: number; createdAt?: number }>;
+          localRows = (await tableRef.bulkGet(incomingIds)) as Array<{ id: string; updatedAt?: number; createdAt?: number; schoolId?: string }>;
         } catch {
           localRows = [];
         }
@@ -460,14 +445,20 @@ export class SyncService {
         for (const raw of rows) {
           const local = localById.get(String(raw.id));
           const cloudUpdated = raw.updated_at ? new Date(String(raw.updated_at)).getTime() : 0;
-          // Untuk last-write-wins: hanya skip jika local punya updatedAt DAN lebih baru
-          // Jika local.updatedAt tidak ada (mis. tabel lama), pakai 0 supaya cloud overwrite
           const localUpdated = local?.updatedAt ?? 0;
-          if (local && localUpdated > 0 && localUpdated > cloudUpdated) {
-            // Local lebih baru - skip
+
+          // Check if local record belongs to different school (schoolId mismatch)
+          // If schoolId changed (via override), always overwrite with cloud data
+          const localSchoolId = local?.schoolId as string | undefined;
+          const schoolIdChanged = localSchoolId && localSchoolId !== schoolId;
+
+          // Last-write-wins: skip only if local is newer AND schoolId matches
+          // If schoolId changed, always overwrite with cloud data
+          if (local && localUpdated > 0 && localUpdated > cloudUpdated && !schoolIdChanged) {
             skipped++;
             continue;
           }
+
           const converted = fromCloudRow<TableRowMap[TableKey]>(t.local, raw);
           if (converted) toWrite.push(converted);
         }
