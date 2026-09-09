@@ -325,7 +325,7 @@ export function initSyncIndicator(): void {
       }
     });
 
-    btnLink?.addEventListener('click', () => {
+    btnLink?.addEventListener('click', async () => {
       const newId = inputSchool?.value.trim();
       if (!newId) {
         appendLog('⚠ Masukkan School ID terlebih dahulu.');
@@ -341,11 +341,40 @@ export function initSyncIndicator(): void {
         return;
       }
       const oldId = schoolId;
+      
+      // Konfirmasi: ganti school ID akan hapus data lokal lama
+      const confirmed = window.confirm(
+        `⚠ GANTI SCHOOL ID\n\n` +
+        `Ini akan MENGHAPUS semua data lokal (siswa, kelas, absensi, face profiles)\n` +
+        `untuk school ID lama: ${oldId}\n\n` +
+        `Data cloud TIDAK terhapus. Setelah ini, klik "Pull Only" untuk tarik data school baru.\n\n` +
+        `Lanjutkan ganti ke ${newId}?`
+      );
+      if (!confirmed) {
+        appendLog('Link dibatalkan.');
+        return;
+      }
+      
       try {
-        localStorage.setItem('sf_school_id_override', newId);
-        appendLog(`✓ School ID diubah: ${oldId} → ${newId}`);
-        appendLog('Refresh halaman untuk menerapkan School ID baru.');
-        // Tampilkan instruksi untuk user
+        // HAPUS SEMUA DATA LOKAL SEBELUM GANTI SCHOOL ID
+        appendLog('🗑 Menghapus data lokal lama...');
+        await db.resetAll();
+        appendLog('✓ IndexedDB cleared');
+        
+        // Clear localStorage keys (keep device_id, auth)
+        const keysToRemove = [
+          APP_CONFIG.schoolIdKey,
+          // sf_school_id_override akan di-set ulang di bawah
+        ];
+        for (const key of keysToRemove) {
+          try { localStorage.removeItem(key); } catch { /* ignore */ }
+        }
+        
+        // SET OVERRIDE BARU
+        localStorage.setItem(APP_CONFIG.schoolIdOverrideKey, newId);
+        appendLog(`✓ School ID diganti: ${oldId} → ${newId}`);
+        appendLog('Refresh halaman untuk menerapkan School ID baru...');
+        
         if (btnLink) {
           btnLink.textContent = '✓ Saved';
           btnLink.style.background = '#059669';
