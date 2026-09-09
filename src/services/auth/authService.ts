@@ -235,6 +235,11 @@ class AuthService {
     return this.initialSessionResolved;
   }
 
+  async waitForInitialSession(): Promise<void> {
+    if (this.initialSessionResolved || !this.initialSessionPromise) return;
+    await this.initialSessionPromise;
+  }
+
   private async emit(): Promise<void> {
     const u = this.currentUser;
     for (const l of this.listeners) l(u);

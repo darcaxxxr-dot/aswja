@@ -19,6 +19,8 @@ function escapeHtml(s: string): string {
   });
 }
 
+let idleInterval: number | null = null;
+
 export function renderAppShell(activePath: string, user: AppUser | null = null): string {
   const items: Array<{ href: string; label: string }> = [
     { href: ROUTES.dashboard, label: 'Dashboard' },
@@ -40,8 +42,14 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
   const offlineBadge = `<span id="offline-badge" style="display:none;background:#dc2626;color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;">OFFLINE</span>`;
   const syncBadge = `<span id="sync-badge" title="Klik untuk detail" style="background:rgba(255,255,255,0.12);color:#fff;padding:4px 10px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><span id="sync-dot" style="width:8px;height:8px;border-radius:50%;background:#94a3b8;"></span><span id="sync-label">Sync: —</span></span>`;
   const userBadge = user
-    ? `<span id="user-badge" title="${user.email ?? ''} · ${ROLE_LABELS[user.role]}${user.subRole ? ' · ' + SUBROLE_LABELS[user.subRole] : ''}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${user.displayName} · ${ROLE_LABELS[user.role]}${user.subRole ? '/' + SUBROLE_LABELS[user.subRole] : ''}</span>`
+    ? `<span id="user-badge" title="${escapeHtml(user.email ?? '')} · ${escapeHtml(ROLE_LABELS[user.role])}${user.subRole ? ' · ' + escapeHtml(SUBROLE_LABELS[user.subRole]) : ''}" style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;display:inline-block;">${escapeHtml(user.displayName)} · ${escapeHtml(ROLE_LABELS[user.role])}${user.subRole ? '/' + escapeHtml(SUBROLE_LABELS[user.subRole]) : ''}</span>`
     : `<a id="user-badge" href="/login" data-link style="background:rgba(255,255,255,0.12);color:#fff;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;text-decoration:none;">Login</a>`;
+  const logoutButton = user
+    ? `<button id="btn-logout" type="button" aria-label="Logout" style="background:rgba(220,38,38,0.2);color:#fca5a5;border:1px solid rgba(220,38,38,0.35);padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;cursor:pointer;min-height:24px;">Logout</button>`
+    : '';
+  const idleBadge = user
+    ? `<span id="idle-badge" style="background:rgba(16,185,129,0.18);color:#86efac;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:6px;white-space:nowrap;">LOGGED IN</span>`
+    : '';
   const installBtn = `<button id="btn-install" class="btn" style="display:none;background:#16a34a;color:#fff;padding:6px 10px;min-height:32px;font-size:13px;">Install App</button>`;
   const versionBadge = `<span id="version-badge" style="background:rgba(255,255,255,0.08);color:#94a3b8;padding:2px 8px;border-radius:8px;font-size:10px;margin-right:6px;font-family:monospace;white-space:nowrap;">v${__APP_VERSION__} · ${__BUILD_TIMESTAMP__}</span>`;
 
@@ -68,7 +76,7 @@ export function renderAppShell(activePath: string, user: AppUser | null = null):
           ASWJA
         </h1>
         <div class="header-right">
-          ${versionBadge}${offlineBadge}${syncBadge}${userBadge}${installBtn}
+          ${versionBadge}${offlineBadge}${syncBadge}${userBadge}${idleBadge}${logoutButton}${installBtn}
         </div>
       </div>
       <nav class="app-nav" id="app-nav">${nav}</nav>
@@ -144,9 +152,31 @@ export function initIdleIndicator(): void {
     badge.textContent = `⏱ ${min}:${String(sec).padStart(2, '0')}`;
   };
   update();
-  setInterval(update, 1000);
+  if (idleInterval !== null) {
+    window.clearInterval(idleInterval);
+  }
+  idleInterval = window.setInterval(update, 1000);
   authService.onAuthStateChange(() => update());
   document.addEventListener('click', () => update(), { passive: true });
+}
+
+export function initUserBadge(): void {
+  const btn = document.getElementById('btn-logout') as HTMLButtonElement | null;
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Keluar...';
+    try {
+      await authService.signOut();
+      if (window.location.pathname !== '/login') {
+        router.navigate('/login');
+      }
+    } catch {
+      btn.disabled = false;
+      btn.textContent = 'Logout';
+    }
+  });
 }
 
 export function initSyncIndicator(): void {
@@ -823,12 +853,14 @@ export function pageNotFound(root: HTMLElement): void {
 
 export function initDashboardAndShell(root: HTMLElement): void {
   const mountShell = async (): Promise<HTMLElement> => {
+    await authService.waitForInitialSession();
     const user = await authService.getCurrentUser();
     root.innerHTML = renderAppShell(window.location.pathname, user);
     // Re-init all shell indicators after DOM is replaced
     initSyncIndicator();
     initOfflineIndicator();
     initIdleIndicator();
+    initUserBadge();
     initInstallPrompt();
     return root.querySelector<HTMLElement>('#page-root')!;
   };
