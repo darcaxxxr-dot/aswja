@@ -572,7 +572,7 @@ async function showQrModal() {
         <button id="qr-close" style="position:absolute;top:8px;right:8px;background:transparent;border:none;font-size:24px;cursor:pointer;color:#64748b;line-height:1;padding:4px 8px;">&times;</button>
         <div style="font-size:14px;color:#64748b;margin-bottom:6px;">📱 TAMPILKAN QR UNTUK LINKING</div>
         <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Pindai dari device baru</h3>
-        <div id="qr-canvas-wrap" style="display:flex;justify-content:center;padding:8px;background:#f1f5f9;border-radius:12px;width:480px;height:480px;margin:0 auto;align-items:center;">
+        <div id="qr-canvas-wrap" style="display:flex;justify-content:center;padding:8px;background:#f1f5f9;border-radius:12px;width:280px;height:280px;margin:0 auto;align-items:center;">
           <div style="color:#64748b;font-size:13px;">Membuat QR...</div>
         </div>
         <div id="qr-info" style="margin-top:12px;font-size:12px;color:#475569;line-height:1.5;"></div>
@@ -598,8 +598,8 @@ async function showQrModal() {
     wrap.innerHTML = svg;
     const svgEl = wrap.querySelector('svg');
     if (svgEl) {
-      svgEl.style.maxWidth = '480px';
-      svgEl.style.maxHeight = '480px';
+      svgEl.style.maxWidth = '280px';
+      svgEl.style.maxHeight = '280px';
       svgEl.style.height = 'auto';
       svgEl.style.width = '100%';
     }
@@ -623,7 +623,7 @@ async function showScanModal() {
         <button id="qr-close" style="position:absolute;top:8px;right:8px;background:transparent;border:none;font-size:24px;cursor:pointer;color:#64748b;line-height:1;padding:4px 8px;">&times;</button>
         <div style="font-size:14px;color:#64748b;margin-bottom:6px;">📷 PINDAI QR</div>
         <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Arahkan kamera ke QR device lain</h3>
-        <div id="qr-scanner-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;width:480px;height:480px;margin:0 auto;">
+        <div id="qr-scanner-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;width:280px;height:280px;margin:0 auto;">
           <div id="qr-scanner-el" style="width:100%;height:100%;"></div>
           <div id="qr-scanner-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.7);font-size:13px;background:rgba(0,0,0,0.4);">Meminta izin kamera...</div>
         </div>
@@ -646,6 +646,26 @@ async function showScanModal() {
     let handled = false;
 
   try {
+    // CSS: make video fill entire frame, no shaded border
+    const style = document.createElement('style');
+    style.textContent = `
+      #qr-scanner-el video,
+      #qr-scanner-el canvas {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+        border-radius: 12px;
+      }
+      /* Remove any shaded region/border from html5-qrcode */
+      .html5-qrcode-scanner-video,
+      .html5-qrcode-scanner-canvas {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+      }
+    `;
+    document.head.appendChild(style);
+
     scanHandle = await startScanning(containerId, {
       onResult: (text: string) => {
         if (handled) return;
