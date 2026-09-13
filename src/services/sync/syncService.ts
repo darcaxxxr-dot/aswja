@@ -412,7 +412,20 @@ export class SyncService {
     const studentSchoolMap = new Map<string, string>(allStudents.map((s) => [s.id, s.schoolId]));
     const mismatchedSchools = new Set<string>();
 
-    for (const t of PUSH_TABLES) {
+    // Order tables by parent dependency: academicYears -> classes -> students -> faceProfiles -> attendanceSessions -> attendanceRecords
+    // Schools is always first (self-referencing)
+    const orderedPushTables: typeof PUSH_TABLES = [
+      PUSH_TABLES[0], // schools
+      PUSH_TABLES[1], // academicYears
+      PUSH_TABLES[2], // classes
+      PUSH_TABLES[3], // students
+      PUSH_TABLES[4], // faceProfiles
+      PUSH_TABLES[5], // attendanceSessions
+      PUSH_TABLES[6]  // attendanceRecords
+    ];
+
+    for (let i = 0; i < orderedPushTables.length; i++) {
+      const t = orderedPushTables[i];
       const tableStart = performance.now();
       const all = (await db[t.local].toArray()) as TableRowMap[TableKey][];
       let schoolRows: TableRowMap[TableKey][];
@@ -438,19 +451,73 @@ export class SyncService {
       try {
         const { inserted, errors: upsertErrors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
         if (upsertErrors.length > 0) {
-          console.warn(`[sync] Push ${t.cloud} errors:`, upsertErrors);
-          this.lastPushErrors.push(...upsertErrors.map((e: string) => `${t.cloud}: ${e}`));
-          for (const err of upsertErrors) {
-            emitSyncTelemetry({
-              timestamp: Date.now(),
-              event: 'sync_error',
-              schoolId,
-              table: t.cloud,
-              error: { code: 'UPSERT_ERROR', message: err }
-            });
-          }
-          if (cloudRows.length > 0) {
-            console.warn(`[sync] First row sample:`, JSON.stringify(cloudRows[0]));
+          // Check for FK violations - if parent missing, retry parent first
+          const fkErrors = upsertErrors.filter((e: string) => e.includes('violates foreign key constraint') || e.includes('PGRST204') || e.includes('sync_version'));
+          if (fkErrors.length > 0 && i > 0) {
+            // Retry parent table first
+            const parentIndex = i - 1;
+            const parent = orderedPushTables[parentIndex];
+            console.warn(`[sync] ${t.cloud}: FK violation, retrying parent ${parent.cloud} first`);
+            const parentAll = (await db[parent.local].toArray()) as TableRowMap[TableKey][];
+            let parentSchoolRows: TableRowMap[TableKey][];
+            if (parent.local === 'schools') {
+              parentSchoolRows = parentAll.filter((r) => (r as School).id === schoolId);
+            } else if (parent.local === 'faceProfiles') {
+              parentSchoolRows = parentAll.filter((r) => studentSchoolMap.get((r as FaceProfile).studentId) === schoolId);
+            } else {
+              parentSchoolRows = parentAll.filter((r) => (r as { schoolId?: string }).schoolId === schoolId);
+            }
+            if (parentSchoolRows.length > 0) {
+              const parentColumns = getCloudColumns(parent.local);
+              const parentRows = parentSchoolRows.map((r) => toCloudRow(parent.local, r));
+              const { errors: parentErrors } = await cloudUpsert(parent.cloud, parentRows as never[], parentColumns);
+              if (parentErrors.length > 0) {
+                console.warn(`[sync] Parent ${parent.cloud} retry also failed:`, parentErrors);
+                this.lastPushErrors.push(...parentErrors.map((e: string) => `${parent.cloud}: ${e}`));
+              }
+            }
+            // Retry current table
+            const { inserted: retryInserted, errors: retryErrors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
+            if (retryErrors.length > 0) {
+              console.warn(`[sync] Push ${t.cloud} retry errors:`, retryErrors);
+              this.lastPushErrors.push(...retryErrors.map((e: string) => `${t.cloud}: ${e}`));
+              for (const err of retryErrors) {
+                emitSyncTelemetry({
+                  timestamp: Date.now(),
+                  event: 'sync_error',
+                  schoolId,
+                  table: t.cloud,
+                  error: { code: 'UPSERT_RETRY_ERROR', message: err }
+                });
+              }
+              if (cloudRows.length > 0) {
+                console.warn(`[sync] First row sample:`, JSON.stringify(cloudRows[0]));
+              }
+            } else if (retryInserted > 0) {
+              // Bump local sync_version after successful retry
+              const tableRef = db[t.local] as unknown as { bulkPut: (rows: unknown[]) => Promise<unknown> };
+              const updatedRows = schoolRows.map((r) => ({
+                ...r,
+                syncVersion: (r.syncVersion ?? 1) + 1
+              }));
+              await tableRef.bulkPut(updatedRows);
+            }
+            result[t.cloud] = retryInserted;
+          } else {
+            console.warn(`[sync] Push ${t.cloud} errors:`, upsertErrors);
+            this.lastPushErrors.push(...upsertErrors.map((e: string) => `${t.cloud}: ${e}`));
+            for (const err of upsertErrors) {
+              emitSyncTelemetry({
+                timestamp: Date.now(),
+                event: 'sync_error',
+                schoolId,
+                table: t.cloud,
+                error: { code: 'UPSERT_ERROR', message: err }
+              });
+            }
+            if (cloudRows.length > 0) {
+              console.warn(`[sync] First row sample:`, JSON.stringify(cloudRows[0]));
+            }
           }
         } else if (inserted > 0) {
           // Bump local sync_version after successful push
@@ -461,14 +528,14 @@ export class SyncService {
           }));
           await tableRef.bulkPut(updatedRows);
         }
-        result[t.cloud] = inserted;
+        if (!result[t.cloud]) result[t.cloud] = inserted;
         emitSyncTelemetry({
           timestamp: Date.now(),
           event: 'sync_table_push',
           schoolId,
           table: t.cloud,
           durationMs: Math.round(performance.now() - tableStart),
-          rowCount: inserted
+          rowCount: result[t.cloud]
         });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
