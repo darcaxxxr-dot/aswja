@@ -137,31 +137,28 @@ function renderDetail(root: HTMLElement, data: PageData): void {
                 <tr style="background:var(--color-bg-elev);color:var(--color-text-inverse);">
                   <th style="padding:8px;text-align:left;">Tanggal</th>
                   <th style="padding:8px;text-align:left;">Jam</th>
-                  <th style="padding:8px;text-align:left;">Status</th>
-                  <th style="padding:8px;text-align:left;">Confidence</th>
-                  <th style="padding:8px;text-align:left;">Device</th>
-                  <th style="padding:8px;text-align:left;">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${recentRecords.map(({ record, sessionDate }) => {
-                  const color = STATUS_COLOR[record.status];
-                  return `
-                    <tr style="border-bottom:1px solid var(--color-border);">
-                      <td style="padding:8px;">${escapeHtml(sessionDate ?? '?')}</td>
-                      <td style="padding:8px;">${formatTime(record.timestamp)}</td>
-                      <td style="padding:8px;font-weight:700;color:${color};">${record.status}</td>
-                      <td style="padding:8px;">${record.confidence.toFixed(3)}</td>
-                      <td style="padding:8px;font-size:12px;" class="muted">${escapeHtml(record.deviceId)}</td>
-                      <td style="padding:8px;">
-                        <select data-status="${record.id}" style="padding:4px;border:1px solid var(--color-border);border-radius:6px;font-size:12px;">
-                          ${STATUS_OPTIONS.map((s) => `<option value="${s}" ${s === record.status ? 'selected' : ''}>${s}</option>`).join('')}
-                        </select>
-                        <button class="btn btn-danger" data-del-record="${record.id}" style="padding:2px 6px;min-height:24px;font-size:11px;margin-left:4px;">×</button>
-                      </td>
+<th style="padding:8px;text-align:left;">Confidence</th>
+                       <th style="padding:8px;text-align:left;">Aksi</th>
                     </tr>
-                  `;
-                }).join('')}
+                  </thead>
+                  <tbody>
+                    ${recentRecords.map(({ record, sessionDate }) => {
+                      const color = STATUS_COLOR[record.status];
+                      return `
+                        <tr style="border-bottom:1px solid var(--color-border);">
+                          <td style="padding:8px;">${escapeHtml(sessionDate ?? '?')}</td>
+                          <td style="padding:8px;">${formatTime(record.timestamp)}</td>
+                          <td style="padding:8px;font-weight:700;color:${color};">${record.status}</td>
+                          <td style="padding:8px;">${record.confidence.toFixed(3)}</td>
+                          <td style="padding:8px;">
+                            <select data-status="${record.id}" style="padding:4px;border:1px solid var(--color-border);border-radius:6px;font-size:12px;">
+                              ${STATUS_OPTIONS.map((s) => `<option value="${s}" ${s === record.status ? 'selected' : ''}>${s}</option>`).join('')}
+                            </select>
+                            <button class="btn btn-danger" data-del-record="${record.id}" style="padding:2px 6px;min-height:24px;font-size:11px;margin-left:4px;">×</button>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
               </tbody>
             </table></div>`
         }

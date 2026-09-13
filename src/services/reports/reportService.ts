@@ -1,5 +1,4 @@
 import { attendanceRepository, studentRepository, classRepository } from '@repositories/index';
-import { getOrCreateDeviceId } from '@utils/device';
 import type { AttendanceRecord, AttendanceSession, AttendanceStatus, ClassRoom, Student } from '@models/types';
 
 export interface AttendanceWithContext {
@@ -201,7 +200,6 @@ export class ReportService {
       'student_name',
       'status',
       'confidence',
-      'device_id',
       'session_id',
       'record_id'
     ];
@@ -221,7 +219,6 @@ export class ReportService {
           csvEscape(student?.name),
           csvEscape(record.status),
           record.confidence.toFixed(3),
-          csvEscape(record.deviceId),
           csvEscape(record.sessionId),
           csvEscape(record.id)
         ].join(',')
@@ -246,7 +243,7 @@ export class ReportService {
   }
 
   getDeviceId(): string {
-    return getOrCreateDeviceId();
+    return '';
   }
 }
 

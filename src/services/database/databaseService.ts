@@ -1,5 +1,5 @@
 import { db } from './dexieSchema';
-import { getOrCreateSchoolId } from '@utils/device';
+import { readActiveSchoolId, resetLocalDataPreservingSchoolIdentity } from '@utils/device';
 
 export class DatabaseError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
@@ -21,8 +21,7 @@ export class DatabaseService {
     }
     if (!this.openPromise) {
       this.openPromise = db.open().then(() => {
-        const schoolId = getOrCreateSchoolId();
-        console.info(`[db] opened, school=${schoolId}`);
+        console.info(`[db] opened, school=${readActiveSchoolId() ?? 'none'}`);
       });
     }
     return this.openPromise;
@@ -95,6 +94,47 @@ export class DatabaseService {
   async resetAll(): Promise<void> {
     await this.open();
     await db.resetAll();
+  }
+
+  async resetPreservingIdentity(): Promise<void> {
+    await this.open();
+    const schoolId = localStorage.getItem('schoolId');
+
+    console.info(`[reset] before: schoolId=${schoolId ?? 'none'}`);
+
+    await db.transaction(
+      'rw',
+      [
+        db.schools,
+        db.academicYears,
+        db.classes,
+        db.students,
+        db.faceProfiles,
+        db.attendanceSessions,
+        db.attendanceRecords,
+        db.users,
+        db.settings,
+        db.syncQueue
+      ],
+      async () => {
+        await Promise.all([
+          db.schools.clear(),
+          db.academicYears.clear(),
+          db.classes.clear(),
+          db.students.clear(),
+          db.faceProfiles.clear(),
+          db.attendanceSessions.clear(),
+          db.attendanceRecords.clear(),
+          db.users.clear(),
+          db.settings.clear(),
+          db.syncQueue.clear()
+        ]);
+      }
+    );
+
+    resetLocalDataPreservingSchoolIdentity();
+
+    console.info(`[reset] after: schoolId=${readActiveSchoolId() ?? 'none'}`);
   }
 
   async importJson(json: string): Promise<Record<string, number>> {

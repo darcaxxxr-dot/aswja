@@ -4,7 +4,7 @@ import { syncService, setSupabaseRuntimeConfig, clearSupabaseRuntimeConfig } fro
 import { authService, type AppUser } from '@services/auth/index';
 import { databaseService } from '@services/database/index';
 import { soundService } from '@services/sound';
-import { formatTime, setSchoolIdOverride, clearSchoolIdOverride, isValidUuid } from '@utils/device';
+import { formatTime } from '@utils/device';
 
 const SECTIONS: Array<{ key: keyof AppSettings; label: string; desc: string }> = [
   { key: 'schoolName', label: 'Nama Sekolah', desc: 'Ditampilkan di header & laporan.' },
@@ -62,12 +62,7 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
             <button class="btn btn-primary" id="btn-save-school">Simpan</button>
           </div>
           <div class="muted" style="font-size:12px;">School ID: <code id="school-id">${escapeHtml(s.schoolId)}</code> <button class="btn btn-ghost" id="btn-copy-school" style="padding:2px 8px;min-height:24px;font-size:11px;margin-left:4px;">Copy</button></div>
-          <div class="row" style="flex-wrap:wrap;gap:8px;">
-            <input id="override-school" type="text" placeholder="Override School ID (UUID, untuk sync ke sekolah lain)" value="${escapeHtml(s.schoolId)}" style="flex:1;min-width:280px;padding:8px;border:1px solid var(--color-border);border-radius:8px;font-family:monospace;font-size:12px;" />
-            <button class="btn btn-ghost" id="btn-override-school">Set Override</button>
-            <button class="btn btn-ghost" id="btn-clear-override">Reset ke auto</button>
-          </div>
-          <div class="muted" style="font-size:11px;">Device ID: <code>${escapeHtml(s.deviceId)}</code></div>
+          <div class="muted" style="font-size:11px;">Link ke School ID lain dilakukan lewat panel Sinkronisasi agar dapat diverifikasi dan reset lokal aman.</div>
         </section>
 
         <section class="card stack" id="section-attendance">
@@ -208,9 +203,10 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
           ${authService.isEnabled() ? `<button class="btn btn-danger" id="btn-logout" style="max-width:160px;">Logout</button>` : ''}
         </section>
 
-        <section class="card stack">
+<section class="card stack">
           <h3 style="margin:0;color:var(--color-danger);">Danger Zone</h3>
-          <button class="btn btn-danger" id="btn-reset" style="max-width:200px;">Reset Database (hapus semua)</button>
+          <button class="btn btn-danger" id="btn-reset" style="max-width:200px;">Reset Data Lokal</button>
+          <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.4;">Hapus data bisnis lokal (siswa, kelas, absensi, face profiles, settings lokal, sync queue). School ID, onboarding, konfigurasi Supabase, dan session auth tetap dipertahankan. Data cloud tidak terpengaruh.</div>
         </section>
 
         <section class="card stack">
@@ -247,31 +243,6 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
         log(`Copy gagal: ${err instanceof Error ? err.message : String(err)}`);
       }
     });
-
-    root.querySelector<HTMLButtonElement>('#btn-override-school')?.addEventListener('click', async () => {
-      const v = root.querySelector<HTMLInputElement>('#override-school')!.value.trim();
-      if (!v) {
-        log('UUID kosong.');
-        return;
-      }
-      if (!isValidUuid(v)) {
-        log('Format UUID tidak valid. Contoh: 00000000-0000-0000-0000-000000000001');
-        return;
-      }
-      try {
-        setSchoolIdOverride(v);
-        log(`School ID override diset: ${v}. Refresh halaman untuk efek penuh.`);
-        await refresh();
-      } catch (err: unknown) {
-        log(`Error: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-
-    root.querySelector<HTMLButtonElement>('#btn-clear-override')?.addEventListener('click', async () => {
-      clearSchoolIdOverride();
-        log('Override dihapus. Pakai school ID auto-generated.');
-        await refresh();
-      });
 
       root.querySelector<HTMLButtonElement>('#btn-save-prayer')?.addEventListener('click', async () => {
         await settingsService.save({
@@ -401,8 +372,8 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
     root.querySelector<HTMLButtonElement>('#btn-reset')?.addEventListener('click', async () => {
       if (!confirm('Reset semua data IndexedDB? TIDAK BISA DIBATALKAN.')) return;
       if (!confirm('Yakin? Data siswa, kelas, absensi, face profile akan hilang.')) return;
-      await databaseService.resetAll();
-      log('Database di-reset.');
+      await databaseService.resetPreservingIdentity();
+      log('Data lokal di-reset. School ID, onboarding, dan konfigurasi tetap dipertahankan.');
       await refresh();
     });
 

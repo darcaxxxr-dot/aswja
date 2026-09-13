@@ -1,5 +1,5 @@
 import { db } from '@services/database/dexieSchema';
-import { generateId, now, getOrCreateSchoolId, getOrCreateDeviceId } from '@utils/device';
+import { generateId, now, requireActiveSchoolId } from '@utils/device';
 import { syncService } from '@services/sync/syncService';
 import type {
   AttendanceRecord,
@@ -66,7 +66,7 @@ export class AttendanceRepository {
       if (date) {
         return db.attendanceSessions
           .where('[schoolId+date+sessionType+prayerName]')
-          .between([getOrCreateSchoolId(), date, 'CLASS', ''], [getOrCreateSchoolId(), date, 'PRAYER', '\uffff'])
+          .between([requireActiveSchoolId(), date, 'CLASS', ''], [requireActiveSchoolId(), date, 'PRAYER', '\uffff'])
           .toArray();
       }
       return db.attendanceSessions
@@ -79,7 +79,7 @@ export class AttendanceRepository {
     if (date) {
       return db.attendanceSessions
         .where('[schoolId+classId+date]')
-        .between([getOrCreateSchoolId(), classId, date], [getOrCreateSchoolId(), classId, date + '\uffff'])
+        .between([requireActiveSchoolId(), classId, date], [requireActiveSchoolId(), classId, date + '\uffff'])
         .toArray();
     }
     return db.attendanceSessions.where('classId').equals(classId).toArray();
@@ -89,7 +89,7 @@ export class AttendanceRepository {
     const ts = now();
     const row: AttendanceSession = {
       id: generateId('SES'),
-      schoolId: getOrCreateSchoolId(),
+      schoolId: requireActiveSchoolId(),
       classId: input.classId,
       date: input.date,
       startTime: input.startTime ?? ts,
@@ -143,13 +143,12 @@ export class AttendanceRepository {
     const ts = now();
     const row: AttendanceRecord = {
       id: generateId('ATT'),
-      schoolId: getOrCreateSchoolId(),
+      schoolId: requireActiveSchoolId(),
       sessionId: input.sessionId,
       studentId: input.studentId,
       timestamp: input.timestamp ?? ts,
       status: input.status,
       confidence: input.confidence,
-      deviceId: getOrCreateDeviceId(),
       createdAt: ts,
       updatedAt: ts
     };

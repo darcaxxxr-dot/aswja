@@ -1,7 +1,7 @@
 import { db } from '@services/database/dexieSchema';
 import { settingRepository } from '@repositories/index';
-import { getOrCreateSchoolId } from '@utils/device';
-import { getSupabaseClient, SupabaseError, cloudSelect, cloudUpsert } from './supabaseClient';
+import { requireActiveSchoolId } from '@utils/device';
+import { getSupabaseClient, SupabaseError, cloudSelect, cloudUpsert, emitSyncTelemetry } from './supabaseClient';
 import type { ClassRoom, Student, FaceProfile, AttendanceSession, AttendanceRecord, AcademicYear, School, SessionType, PrayerName } from '@models/types';
 
 export interface SyncReport {
@@ -20,9 +20,19 @@ export interface SyncStatusInfo {
   pendingPush: number;
 }
 
+export interface PushOnlyReport {
+  ok: boolean;
+  pushed: Record<string, number>;
+  errors: string[];
+  durationMs: number;
+  lastSyncAt: number;
+  progress: Array<{ table: string; status: 'pending' | 'pushing' | 'complete' | 'error'; count?: number; error?: string }>;
+}
+
 const SYNC_KEYS = {
   lastSyncAt: 'sync.lastSyncAt',
   lastError: 'sync.lastError',
+  syncErrors: 'sync.errors',
   autoEnabled: 'sync.autoEnabled',
   intervalMs: 'sync.intervalMs'
 } as const;
@@ -59,23 +69,22 @@ type TableRowMap = {
   attendanceRecords: AttendanceRecord;
 };
 
-// ===== PERBAIKAN: Mapping per tabel =====
 function getCloudColumns(table: TableKey): string[] {
   switch (table) {
     case 'schools':
-      return ['id', 'name', 'created_at', 'updated_at', 'deleted_at'];
+      return ['id', 'name', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'academicYears':
-      return ['id', 'name', 'school_id', 'start_date', 'end_date', 'is_active', 'created_at', 'updated_at', 'deleted_at'];
+      return ['id', 'name', 'school_id', 'start_date', 'end_date', 'is_active', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'classes':
-      return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at', 'updated_at', 'deleted_at'];
+      return ['id', 'school_id', 'academic_year_id', 'grade', 'name', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'students':
-      return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at', 'updated_at', 'deleted_at'];
+      return ['id', 'school_id', 'nis', 'nisn', 'name', 'gender', 'class_id', 'status', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'faceProfiles':
-      return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at', 'deleted_at'];
+      return ['id', 'student_id', 'embedding', 'model_version', 'quality_score', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'attendanceSessions':
-      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'session_type', 'prayer_name', 'created_by', 'created_at', 'updated_at', 'deleted_at'];
+      return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'session_type', 'prayer_name', 'created_by', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'attendanceRecords':
-      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_at', 'updated_at', 'deleted_at'];
+      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     default:
       return [];
   }
@@ -85,13 +94,14 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
   const out: Record<string, unknown> = {};
 
   switch (table) {
-     case 'schools': {
+    case 'schools': {
       const r = row as School;
       out.id = r.id;
       out.name = r.name;
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
       break;
     }
     case 'academicYears': {
@@ -105,6 +115,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
       break;
     }
     case 'classes': {
@@ -117,6 +128,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
       break;
     }
     case 'students': {
@@ -132,6 +144,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
       break;
     }
     case 'faceProfiles': {
@@ -144,6 +157,7 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
       break;
     }
     case 'attendanceSessions': {
@@ -161,9 +175,10 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
       break;
     }
-     case 'attendanceRecords': {
+    case 'attendanceRecords': {
       const r = row as AttendanceRecord;
       out.id = r.id;
       out.school_id = r.schoolId;
@@ -172,10 +187,10 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.timestamp = new Date(r.timestamp).toISOString();
       out.status = r.status;
       out.confidence = r.confidence;
-      out.device_id = r.deviceId;
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
       break;
     }
   }
@@ -187,24 +202,23 @@ function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
-function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: number; createdAt?: number; timestamp?: number; startTime?: number; endTime?: number; deletedAt?: number }>(table: TableKey, raw: Record<string, unknown>): T | null {
+function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: number; createdAt?: number; timestamp?: number; startTime?: number; endTime?: number; deletedAt?: number; syncVersion?: number }>(table: TableKey, raw: Record<string, unknown>): T | null {
   if (!raw.id) return null;
   const id = String(raw.id);
   const createdAt = raw.created_at ? new Date(String(raw.created_at)).getTime() : Date.now();
 
-  // Convert snake_case keys in raw to camelCase for local type compatibility
   const processed: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
     const camelKey = snakeToCamel(key);
     processed[camelKey] = value;
   }
 
-  // Parse deletedAt from cloud (snake_case → camelCase already done above)
   const deletedAt = processed.deletedAt ? new Date(String(processed.deletedAt)).getTime() : undefined;
   const updatedAt = processed.updatedAt ? new Date(String(processed.updatedAt)).getTime() : createdAt;
+  const syncVersion = processed.syncVersion ? Number(processed.syncVersion) : 1;
 
   if (table === 'attendanceRecords') {
-    const ar = processed as Record<string, unknown> & { sessionId: string; studentId: string; status: string; confidence: number; deviceId: string };
+    const ar = processed as Record<string, unknown> & { sessionId: string; studentId: string; status: string; confidence: number; deviceId?: string | null };
     return {
       id,
       schoolId: String(ar.school_id ?? ''),
@@ -213,13 +227,15 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       timestamp: ar.timestamp ? new Date(String(ar.timestamp)).getTime() : Date.now(),
       status: ar.status as AttendanceRecord['status'],
       confidence: Number(ar.confidence ?? 0),
-      deviceId: ar.deviceId ?? '',
+      deviceId: ar.deviceId ?? undefined,
       createdAt,
       updatedAt,
-      deletedAt
+      deletedAt,
+      syncVersion
     } as unknown as T;
   }
-   if (table === 'attendanceSessions') {
+
+  if (table === 'attendanceSessions') {
     const s = processed as Record<string, unknown> & { classId: string; date: string; status: string; createdBy: string };
     return {
       id,
@@ -234,7 +250,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       createdBy: s.createdBy ?? '',
       createdAt,
       updatedAt,
-      deletedAt
+      deletedAt,
+      syncVersion
     } as unknown as T;
   }
 
@@ -248,7 +265,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       qualityScore: Number(f.qualityScore ?? 0),
       createdAt,
       updatedAt,
-      deletedAt
+      deletedAt,
+      syncVersion
     } as unknown as T;
   }
 
@@ -265,7 +283,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       status: (s.status as Student['status']) ?? 'active',
       createdAt,
       updatedAt,
-      deletedAt
+      deletedAt,
+      syncVersion
     } as unknown as T;
   }
 
@@ -280,11 +299,12 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       academicYearId: String(academicYearId),
       createdAt,
       updatedAt,
-      deletedAt
+      deletedAt,
+      syncVersion
     } as unknown as T;
   }
 
-   if (table === 'academicYears') {
+  if (table === 'academicYears') {
     const a = processed as Record<string, unknown> & { name: string; startDate: string; endDate: string; isActive: boolean };
     return {
       id,
@@ -295,7 +315,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       isActive: a.isActive ?? false,
       createdAt,
       updatedAt,
-      deletedAt
+      deletedAt,
+      syncVersion
     } as unknown as T;
   }
 
@@ -306,7 +327,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
       name: sh.name,
       createdAt,
       updatedAt,
-      deletedAt
+      deletedAt,
+      syncVersion
     } as unknown as T;
   }
 
@@ -316,7 +338,8 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
 export class SyncService {
   private intervalId: number | null = null;
   private listeners: Array<(status: SyncStatusInfo) => void> = [];
-  // Removed schemaCache - using hardcoded columns instead
+  private lastPushErrors: string[] = [];
+  private lastPullErrors: string[] = [];
 
   onStatusChange(listener: (status: SyncStatusInfo) => void): () => void {
     this.listeners.push(listener);
@@ -331,13 +354,11 @@ export class SyncService {
     for (const l of this.listeners) l(status);
   }
 
-  // REMOVED: getExistingColumns - Supabase REST API doesn't allow information_schema queries
-  // Using hardcoded CLOUD_COLUMNS instead
-
   async getStatus(): Promise<SyncStatusInfo> {
-    const [lastSyncAtStr, lastError, queueCount] = await Promise.all([
+    const [lastSyncAtStr, lastError, , queueCount] = await Promise.all([
       settingRepository.get(SYNC_KEYS.lastSyncAt),
       settingRepository.get(SYNC_KEYS.lastError),
+      settingRepository.get(SYNC_KEYS.syncErrors),
       db.syncQueue.count()
     ]);
     return {
@@ -348,13 +369,33 @@ export class SyncService {
     };
   }
 
+  async getErrors(): Promise<string[]> {
+    const stored = await settingRepository.get(SYNC_KEYS.syncErrors);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as unknown;
+        if (Array.isArray(parsed)) return parsed.map((item) => String(item));
+      } catch {
+        // ignore malformed stored errors
+      }
+    }
+    const lastError = await settingRepository.get(SYNC_KEYS.lastError);
+    return lastError ? lastError.split(';').map((item) => item.trim()).filter(Boolean) : [];
+  }
+
   async pushAll(): Promise<Record<string, number>> {
     if (!getSupabaseClient()) throw new SupabaseError('Supabase client not configured');
-    const schoolId = getOrCreateSchoolId();
+    const schoolId = requireActiveSchoolId();
     const result: Record<string, number> = {};
 
-    // Ensure school record exists in IndexedDB so FK constraints in cloud are satisfied.
-    // Without this, academic_years/classes/students/face_profiles push will fail with 23503.
+    const syncStart = performance.now();
+    emitSyncTelemetry({
+      timestamp: Date.now(),
+      event: 'sync_start',
+      schoolId,
+      network: { online: navigator.onLine, latencyMs: 0 }
+    });
+
     const existingSchool = await db.schools.get(schoolId);
     if (!existingSchool) {
       const ts = Date.now();
@@ -362,29 +403,28 @@ export class SyncService {
         id: schoolId,
         name: 'Sekolah',
         createdAt: ts,
-        updatedAt: ts
+        updatedAt: ts,
+        syncVersion: 1
       });
     }
 
-    // Build a studentId → schoolId lookup map for faceProfiles injection
     const allStudents = await db.students.toArray();
     const studentSchoolMap = new Map<string, string>(allStudents.map((s) => [s.id, s.schoolId]));
+    const mismatchedSchools = new Set<string>();
 
     for (const t of PUSH_TABLES) {
+      const tableStart = performance.now();
       const all = (await db[t.local].toArray()) as TableRowMap[TableKey][];
-
-      // Filter rows that belong to this school
       let schoolRows: TableRowMap[TableKey][];
+
       if (t.local === 'schools') {
-        // Force-include the current school record so it gets pushed first
         schoolRows = all.filter((r) => (r as School).id === schoolId);
       } else if (t.local === 'faceProfiles') {
-        schoolRows = all.filter((r) => {
-          const fp = r as FaceProfile;
-          return studentSchoolMap.get(fp.studentId) === schoolId;
-        });
+        schoolRows = all.filter((r) => studentSchoolMap.get((r as FaceProfile).studentId) === schoolId);
       } else {
         schoolRows = all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId);
+        all.filter((r) => (r as { schoolId?: string }).schoolId && (r as { schoolId?: string }).schoolId !== schoolId)
+          .forEach((r) => mismatchedSchools.add((r as { schoolId?: string }).schoolId as string));
       }
 
       if (schoolRows.length === 0) {
@@ -392,47 +432,99 @@ export class SyncService {
         continue;
       }
 
-      // Konversi ke cloud rows
-      const cloudRows = schoolRows.map((r) => {
-        const row = toCloudRow(t.local, r);
-        // face_profiles tidak punya kolom school_id di cloud (resolved via student_id)
-        return row;
-      });
-
-      // Use hardcoded columns directly (no information_schema query needed)
+      const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r));
       const columns = getCloudColumns(t.local);
 
       try {
-        const { inserted, errors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
-        if (errors.length > 0) {
-          console.warn(`[sync] Push ${t.cloud} errors:`, errors);
-          // Log first row sample for debugging
+        const { inserted, errors: upsertErrors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
+        if (upsertErrors.length > 0) {
+          console.warn(`[sync] Push ${t.cloud} errors:`, upsertErrors);
+          this.lastPushErrors.push(...upsertErrors.map((e: string) => `${t.cloud}: ${e}`));
+          for (const err of upsertErrors) {
+            emitSyncTelemetry({
+              timestamp: Date.now(),
+              event: 'sync_error',
+              schoolId,
+              table: t.cloud,
+              error: { code: 'UPSERT_ERROR', message: err }
+            });
+          }
           if (cloudRows.length > 0) {
             console.warn(`[sync] First row sample:`, JSON.stringify(cloudRows[0]));
           }
+        } else if (inserted > 0) {
+          // Bump local sync_version after successful push
+          const tableRef = db[t.local] as unknown as { bulkPut: (rows: unknown[]) => Promise<unknown> };
+          const updatedRows = schoolRows.map((r) => ({
+            ...r,
+            syncVersion: (r.syncVersion ?? 1) + 1
+          }));
+          await tableRef.bulkPut(updatedRows);
         }
         result[t.cloud] = inserted;
+        emitSyncTelemetry({
+          timestamp: Date.now(),
+          event: 'sync_table_push',
+          schoolId,
+          table: t.cloud,
+          durationMs: Math.round(performance.now() - tableStart),
+          rowCount: inserted
+        });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[sync] Push ${t.cloud} failed: ${msg}`);
+        this.lastPushErrors.push(`${t.cloud}: ${msg}`);
         result[t.cloud] = 0;
-        // Lanjut ke tabel berikutnya, jangan throw agar sync tabel lain tetap berjalan
+        emitSyncTelemetry({
+          timestamp: Date.now(),
+          event: 'sync_error',
+          schoolId,
+          table: t.cloud,
+          error: { code: 'PUSH_FAILED', message: msg }
+        });
       }
     }
+    if (mismatchedSchools.size > 0) {
+      console.warn(`[sync] Push skipped rows from mismatched schools: ${Array.from(mismatchedSchools).join(', ')}`);
+    }
+
+    emitSyncTelemetry({
+      timestamp: Date.now(),
+      event: 'sync_complete',
+      schoolId,
+      durationMs: Math.round(performance.now() - syncStart)
+    });
+
     return result;
   }
 
   async pullAll(sinceMs?: number): Promise<Record<string, number>> {
     if (!getSupabaseClient()) throw new SupabaseError('Supabase client not configured');
-    const schoolId = getOrCreateSchoolId();
+    const schoolId = requireActiveSchoolId();
     const sinceIso = sinceMs ? new Date(sinceMs).toISOString() : undefined;
     const result: Record<string, number> = {};
 
+    const syncStart = performance.now();
+    emitSyncTelemetry({
+      timestamp: Date.now(),
+      event: 'sync_start',
+      schoolId,
+      network: { online: navigator.onLine, latencyMs: 0 }
+    });
+
     for (const t of PULL_TABLES) {
+      const tableStart = performance.now();
       try {
         const { data, error } = await cloudSelect(t.cloud, schoolId, sinceIso);
         if (error) {
           console.warn(`[sync] Pull ${t.cloud} error:`, error);
+          emitSyncTelemetry({
+            timestamp: Date.now(),
+            event: 'sync_error',
+            schoolId,
+            table: t.cloud,
+            error: { code: 'PULL_ERROR', message: error }
+          });
           continue;
         }
         const rows = (data ?? []) as Record<string, unknown>[];
@@ -441,12 +533,21 @@ export class SyncService {
           continue;
         }
 
-        // Last-write-wins: hanya overwrite local jika cloud updatedAt lebih baru
+        const mismatchedSchoolRows = rows.filter((r) => String(r.school_id ?? '') !== schoolId);
+        if (mismatchedSchoolRows.length > 0) {
+          console.warn(`[sync] Pull ${t.cloud}: ${mismatchedSchoolRows.length} rows have mismatched school_id, skipping`);
+        }
+        const safeRows = rows.filter((r) => String(r.school_id ?? '') === schoolId);
+        if (safeRows.length === 0) {
+          result[t.cloud] = 0;
+          continue;
+        }
+
         const tableRef = db[t.local] as unknown as { bulkGet: (ids: string[]) => Promise<unknown[]>; bulkPut: (rows: unknown[]) => Promise<unknown> };
-        const incomingIds = rows.map((r) => String((r as { id: unknown }).id));
-        let localRows: Array<{ id: string; updatedAt?: number; createdAt?: number; schoolId?: string }> = [];
+        const incomingIds = safeRows.map((r) => String((r as { id: unknown }).id));
+        let localRows: Array<{ id: string; updatedAt?: number; createdAt?: number; schoolId?: string; syncVersion?: number }> = [];
         try {
-          localRows = (await tableRef.bulkGet(incomingIds)) as Array<{ id: string; updatedAt?: number; createdAt?: number; schoolId?: string }>;
+          localRows = (await tableRef.bulkGet(incomingIds)) as Array<{ id: string; updatedAt?: number; createdAt?: number; schoolId?: string; syncVersion?: number }>;
         } catch {
           localRows = [];
         }
@@ -454,20 +555,25 @@ export class SyncService {
 
         const toWrite: TableRowMap[TableKey][] = [];
         let skipped = 0;
-        for (const raw of rows) {
+        let conflicts = 0;
+        for (const raw of safeRows) {
           const local = localById.get(String(raw.id));
-          const cloudUpdated = raw.updated_at ? new Date(String(raw.updated_at)).getTime() : 0;
+          
           const localUpdated = local?.updatedAt ?? 0;
+          const cloudSyncVersion = raw.sync_version ? Number(raw.sync_version) : 1;
+          const localSyncVersion = local?.syncVersion ?? 0;
 
-          // Check if local record belongs to different school (schoolId mismatch)
-          // If schoolId changed (via override), always overwrite with cloud data
           const localSchoolId = local?.schoolId as string | undefined;
           const schoolIdChanged = localSchoolId != null && localSchoolId !== '' && localSchoolId !== schoolId;
 
-          // Last-write-wins: skip only if local is newer AND schoolId matches
-          // If schoolId changed, always overwrite with cloud data
-          if (local && localUpdated > 0 && localUpdated > cloudUpdated && !schoolIdChanged) {
+          // sync_version based conflict detection:
+          // if local syncVersion >= cloudSyncVersion and localUpdated > 0,
+          // keep local unless schoolId changed.
+          if (local && localUpdated > 0 && localSyncVersion >= cloudSyncVersion && !schoolIdChanged) {
             skipped++;
+            if (localSyncVersion > cloudSyncVersion) {
+              conflicts++;
+            }
             continue;
           }
 
@@ -478,25 +584,152 @@ export class SyncService {
           await tableRef.bulkPut(toWrite);
         }
         if (skipped > 0) {
-          console.info(`[sync] Pull ${t.cloud}: ${toWrite.length} applied, ${skipped} skipped (local newer)`);
+          console.info(`[sync] Pull ${t.cloud}: ${toWrite.length} applied, ${skipped} skipped (local newer), ${conflicts} conflicts`);
         }
         result[t.cloud] = toWrite.length;
+        emitSyncTelemetry({
+          timestamp: Date.now(),
+          event: 'sync_table_pull',
+          schoolId,
+          table: t.cloud,
+          durationMs: Math.round(performance.now() - tableStart),
+          rowCount: toWrite.length
+        });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[sync] Pull ${t.cloud} failed: ${msg}`);
-        // Continue with other tables
+        emitSyncTelemetry({
+          timestamp: Date.now(),
+          event: 'sync_error',
+          schoolId,
+          table: t.cloud,
+          error: { code: 'PULL_FAILED', message: msg }
+        });
       }
     }
+
+    emitSyncTelemetry({
+      timestamp: Date.now(),
+      event: 'sync_complete',
+      schoolId,
+      durationMs: Math.round(performance.now() - syncStart)
+    });
+
     return result;
+  }
+
+  async pushOnly(): Promise<PushOnlyReport> {
+    const start = performance.now();
+    const result: Record<string, number> = {};
+    const errors: string[] = [];
+    const progress: Array<{ table: string; status: 'pending' | 'pushing' | 'complete' | 'error'; count?: number; error?: string }> = [];
+
+    if (!getSupabaseClient()) {
+      errors.push('Supabase client not configured');
+      return {
+        ok: false,
+        pushed: result,
+        errors,
+        durationMs: 0,
+        lastSyncAt: 0,
+        progress: PUSH_TABLES.map((t) => ({ table: t.cloud, status: 'error', error: 'Supabase not configured' }))
+      };
+    }
+
+    const schoolId = requireActiveSchoolId();
+
+    progress.push({ table: 'schools', status: 'pushing' });
+    const existingSchool = await db.schools.get(schoolId);
+    if (!existingSchool) {
+      const ts = Date.now();
+      await db.schools.put({
+        id: schoolId,
+        name: 'Sekolah',
+        createdAt: ts,
+        updatedAt: ts
+      });
+    }
+    result.schools = 1;
+    progress[progress.length - 1] = { table: 'schools', status: 'complete', count: 1 };
+
+    const allStudents = await db.students.toArray();
+    const studentSchoolMap = new Map<string, string>(allStudents.map((s) => [s.id, s.schoolId]));
+
+    const sequentialTables = PUSH_TABLES.slice(1);
+
+    for (const t of sequentialTables) {
+      progress.push({ table: t.cloud, status: 'pushing' });
+
+      const all = (await db[t.local].toArray()) as TableRowMap[TableKey][];
+      let schoolRows: TableRowMap[TableKey][];
+
+      if (t.local === 'faceProfiles') {
+        schoolRows = all.filter((r) => studentSchoolMap.get((r as FaceProfile).studentId) === schoolId);
+      } else {
+        schoolRows = all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId);
+      }
+
+      if (schoolRows.length === 0) {
+        result[t.cloud] = 0;
+        progress[progress.length - 1] = { table: t.cloud, status: 'complete', count: 0 };
+        continue;
+      }
+
+      const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r));
+      const columns = getCloudColumns(t.local);
+
+      try {
+        const { inserted, errors: upsertErrors } = await cloudUpsert(t.cloud, cloudRows as never[], columns);
+        if (upsertErrors.length > 0) {
+          console.warn(`[sync] Push ${t.cloud} errors:`, upsertErrors);
+          errors.push(...upsertErrors);
+          progress[progress.length - 1] = { table: t.cloud, status: 'error', count: inserted, error: upsertErrors[0] };
+        } else {
+          result[t.cloud] = inserted;
+          progress[progress.length - 1] = { table: t.cloud, status: 'complete', count: inserted };
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[sync] Push ${t.cloud} failed: ${msg}`);
+        errors.push(`${t.cloud}: ${msg}`);
+        progress[progress.length - 1] = { table: t.cloud, status: 'error', error: msg };
+      }
+    }
+
+    const now = Date.now();
+    const ok = errors.length === 0;
+    if (ok) {
+      this.lastPushErrors = [];
+    }
+    await settingRepository.set(SYNC_KEYS.lastSyncAt, String(now));
+    if (!ok) {
+      await settingRepository.set(SYNC_KEYS.lastError, errors[errors.length - 1]);
+      await settingRepository.set(SYNC_KEYS.syncErrors, JSON.stringify(errors));
+    } else {
+      await settingRepository.set(SYNC_KEYS.lastError, '');
+      await settingRepository.set(SYNC_KEYS.syncErrors, '');
+    }
+
+    await this.emit();
+
+    return {
+      ok,
+      pushed: result,
+      errors,
+      durationMs: Math.round(performance.now() - start),
+      lastSyncAt: now,
+      progress
+    };
   }
 
   async runFullSync(): Promise<SyncReport> {
     const start = performance.now();
-    const errors: string[] = [];
     let pushed: Record<string, number> = {};
     let pulled: Record<string, number> = {};
 
     if (!navigator.onLine) {
+      await settingRepository.set(SYNC_KEYS.lastError, 'offline');
+      await settingRepository.set(SYNC_KEYS.syncErrors, JSON.stringify(['offline']));
       return {
         ok: false,
         pushed,
@@ -508,6 +741,8 @@ export class SyncService {
     }
 
     if (!getSupabaseClient()) {
+      await settingRepository.set(SYNC_KEYS.lastError, 'supabase not configured');
+      await settingRepository.set(SYNC_KEYS.syncErrors, JSON.stringify(['supabase not configured']));
       return {
         ok: false,
         pushed,
@@ -518,24 +753,12 @@ export class SyncService {
       };
     }
 
-    const schoolId = getOrCreateSchoolId();
-    if (!schoolId) {
-      return {
-        ok: false,
-        pushed,
-        pulled,
-        errors: ['schoolId not available'],
-        durationMs: 0,
-        lastSyncAt: 0
-      };
-    }
-
     try {
       pushed = await this.pushAll();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[sync] push failed: ${msg}`);
-      errors.push(`push: ${msg}`);
+      this.lastPushErrors.push(`push: ${msg}`);
     }
 
     try {
@@ -543,16 +766,23 @@ export class SyncService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[sync] pull failed: ${msg}`);
-      errors.push(`pull: ${msg}`);
+      this.lastPullErrors.push(`pull: ${msg}`);
     }
 
+    const errors = [...this.lastPushErrors, ...this.lastPullErrors];
     const now = Date.now();
     const ok = errors.length === 0;
+    if (ok) {
+      this.lastPushErrors = [];
+      this.lastPullErrors = [];
+    }
     await settingRepository.set(SYNC_KEYS.lastSyncAt, String(now));
     if (!ok) {
-      await settingRepository.set(SYNC_KEYS.lastError, errors.join('; '));
+      await settingRepository.set(SYNC_KEYS.lastError, errors[errors.length - 1]);
+      await settingRepository.set(SYNC_KEYS.syncErrors, JSON.stringify(errors));
     } else {
       await settingRepository.set(SYNC_KEYS.lastError, '');
+      await settingRepository.set(SYNC_KEYS.syncErrors, '');
     }
 
     await this.emit();

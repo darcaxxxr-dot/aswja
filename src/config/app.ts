@@ -1,9 +1,12 @@
 export const APP_CONFIG = {
   appName: 'ASWJA',
   version: '0.1.0',
-  deviceIdKey: 'sf_device_id',
+  deviceIdKey: 'sf_device_id', // Legacy key - to be cleared after migration
   schoolIdKey: 'sf_school_id',
-  schoolIdOverrideKey: 'sf_school_id_override'
+  schoolIdOverrideKey: 'sf_school_id_override',
+  onboardingCompletedKey: 'sf_onboarding_completed',
+  schoolProvisioningPendingKey: 'sf_school_provisioning_pending',
+  schoolLinkPendingKey: 'sf_school_link_pending'
 } as const;
 
 export const CAMERA_CONFIG = {
@@ -34,6 +37,7 @@ export const RECOGNITION_CONFIG = {
 
 export const ROUTES = {
   dashboard: '/dashboard',
+  onboarding: '/onboarding',
   students: '/students',
   studentImport: '/students/import',
   studentDetail: (id: string) => `/students/${id}`,

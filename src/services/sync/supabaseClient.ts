@@ -37,6 +37,16 @@ export function getSupabaseConfig(): SupabaseConfig | null {
   return { url, anonKey, source: 'env' };
 }
 
+export function getSupabaseProjectRef(): string | null {
+  const cfg = getSupabaseConfig();
+  if (!cfg) return null;
+  try {
+    return new URL(cfg.url).hostname.split('.')[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 export function setSupabaseRuntimeConfig(url: string, anonKey: string): void {
   localStorage.setItem(RUNTIME_KEY, JSON.stringify({ url, anonKey }));
   cachedClient = null;
@@ -54,11 +64,6 @@ export function getSupabaseClient(): SupabaseClient | null {
   const cfg = getSupabaseConfig();
   if (!cfg) return null;
   cachedClient = createClient(cfg.url, cfg.anonKey, {
-    // Always persist the session in localStorage so the user stays logged in
-    // across full page reloads (which the login flow triggers via
-    // window.location.pathname). Without this, signIn would succeed but
-    // getSession() would return null on the next page load, causing the
-    // auth state listener to redirect the user back to /login.
     auth: { persistSession: true, autoRefreshToken: true },
     db: { schema: 'public' }
   });
@@ -135,7 +140,47 @@ export async function testConnection(): Promise<ConnectionTestResult> {
 export interface CloudRow {
   id: string;
   school_id: string;
+  sync_version?: number;
   [key: string]: unknown;
+}
+
+export interface SyncTelemetryEvent {
+  timestamp: number;
+  event: 'sync_start' | 'sync_table_push' | 'sync_table_pull' | 'sync_error' | 'sync_complete';
+  schoolId: string;
+  table?: string;
+  durationMs?: number;
+  rowCount?: number;
+  error?: {
+    code: string;
+    message: string;
+    detail?: string;
+    policy?: string;
+  };
+  network?: {
+    online: boolean;
+    latencyMs: number;
+  };
+}
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function emitSyncTelemetry(event: SyncTelemetryEvent): void {
+  try {
+    const stored = localStorage.getItem('sf_sync_telemetry');
+    const existing: SyncTelemetryEvent[] = stored ? JSON.parse(stored) : [];
+    existing.push(event);
+    // Keep last 200 events
+    const trimmed = existing.slice(-200);
+    localStorage.setItem('sf_sync_telemetry', JSON.stringify(trimmed));
+  } catch {
+    // ignore telemetry storage failures
+  }
 }
 
 export async function cloudUpsert<T extends CloudRow>(
@@ -163,11 +208,27 @@ export async function cloudUpsert<T extends CloudRow>(
         })
       : batch;
 
-    const { data, error } = await client.from(table).upsert(filteredBatch, { onConflict: 'id' }).select('id');
-    if (error) {
-      errors.push(`Batch ${i}-${i + batch.length}: ${error.message} (code=${error.code ?? 'unknown'})`);
-    } else {
-      inserted += data?.length ?? 0;
+    let attempt = 0;
+    while (attempt < MAX_RETRIES) {
+      const { data, error } = await client.from(table).upsert(filteredBatch, { onConflict: 'id' }).select('id');
+      if (!error) {
+        inserted += data?.length ?? 0;
+        break;
+      }
+
+      const msg = error.message;
+      const code = error.code ?? 'unknown';
+      const retryable = code === '23505' || code === 'PGRST301' || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('timeout');
+
+      if (retryable && attempt < MAX_RETRIES - 1) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+        await sleep(delay);
+        attempt++;
+        continue;
+      }
+
+      errors.push(`Batch ${i}-${i + batch.length}: ${msg} (code=${code})`);
+      break;
     }
   }
   return { inserted, errors };
@@ -181,41 +242,35 @@ export async function cloudSelect<T = CloudRow>(
   const client = getSupabaseClient();
   if (!client) return { data: [], error: 'Supabase client not configured' };
 
-  // Tables that don't have a direct school_id column:
-  // - 'schools' is the root entity itself
-  // - 'face_profiles' links via student_id -> students.school_id
-   let q;
-   if (table === 'schools') {
-     q = client.from(table).select('*').eq('id', schoolId);
-   } else if (table === 'face_profiles') {
-     // face_profiles tidak punya school_id; join via students
-     q = client
-       .from(table)
-       .select('*, students!inner(school_id)')
-       .eq('students.school_id', schoolId);
-   } else {
-     q = client.from(table).select('*').eq('school_id', schoolId);
-   }
+  let q;
+  if (table === 'schools') {
+    q = client.from(table).select('*').eq('id', schoolId);
+  } else if (table === 'face_profiles') {
+    q = client
+      .from(table)
+      .select('*, students!inner(school_id)')
+      .eq('students.school_id', schoolId);
+  } else {
+    q = client.from(table).select('*').eq('school_id', schoolId);
+  }
 
-   if (sinceIso) q = q.gt('updated_at', sinceIso);
+  if (sinceIso) q = q.gt('updated_at', sinceIso);
 
-   // Soft-delete: exclude records where deleted_at IS NOT NULL (for tables that have the column)
-   const softDeleteTables = [
-     'academic_years',
-     'classes',
-     'students',
-     'face_profiles',
-     'attendance_sessions',
-     'attendance_records',
-     'users'
-   ];
-   if (softDeleteTables.includes(table)) {
-     q = q.is('deleted_at', null);
-   }
+  const softDeleteTables = [
+    'academic_years',
+    'classes',
+    'students',
+    'face_profiles',
+    'attendance_sessions',
+    'attendance_records',
+    'users'
+  ];
+  if (softDeleteTables.includes(table)) {
+    q = q.is('deleted_at', null);
+  }
 
-   const { data, error } = await q;
+  const { data, error } = await q;
   if (error) return { data: [], error: error.message };
-  // Strip the joined students object from result rows
   const rows = (data as unknown as Record<string, unknown>[]) ?? [];
   const cleaned = rows.map((r) => {
     const { students: _omit, ...rest } = r as Record<string, unknown>;

@@ -1,12 +1,11 @@
 import { settingRepository } from '@repositories/index';
-import { getOrCreateDeviceId, getOrCreateSchoolId } from '@utils/device';
+import { readActiveSchoolId } from '@utils/device';
 import { getSupabaseConfig, getSupabaseClient } from '@services/sync/supabaseClient';
 import { syncService } from '@services/sync/syncService';
 
 export interface AppSettings {
   schoolName: string;
   schoolId: string;
-  deviceId: string;
   attendance: {
     onTimeUntil: string;
     lateAfter: string;
@@ -78,7 +77,6 @@ const KEYS = {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   schoolName: 'SMA Default',
   schoolId: '',
-  deviceId: '',
   attendance: {
     onTimeUntil: '07:15',
     lateAfter: '07:15',
@@ -149,11 +147,10 @@ export class SettingsService {
       settingRepository.get(KEYS.prayerIsyaCloseAt)
     ]);
 
-    return {
+return {
       ...DEFAULT_APP_SETTINGS,
       schoolName: stored[0] ?? DEFAULT_APP_SETTINGS.schoolName,
-      schoolId: getOrCreateSchoolId(),
-      deviceId: getOrCreateDeviceId(),
+      schoolId: readActiveSchoolId() ?? '',
       attendance: {
         onTimeUntil: stored[1] ?? DEFAULT_APP_SETTINGS.attendance.onTimeUntil,
         lateAfter: stored[2] ?? DEFAULT_APP_SETTINGS.attendance.lateAfter,

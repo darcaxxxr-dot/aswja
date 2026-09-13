@@ -1,5 +1,5 @@
 import { db } from '@services/database/dexieSchema';
-import { generateId, now, getOrCreateSchoolId } from '@utils/device';
+import { generateId, now, requireActiveSchoolId } from '@utils/device';
 import { syncService } from '@services/sync/syncService';
 import type { Gender, Student, StudentStatus } from '@models/types';
 
@@ -46,7 +46,7 @@ export class StudentRepository {
     const ts = now();
     const row: Student = {
       id: generateId('STU'),
-      schoolId: getOrCreateSchoolId(),
+      schoolId: requireActiveSchoolId(),
       nis: input.nis.trim(),
       nisn: input.nisn?.trim(),
       name: input.name.trim(),

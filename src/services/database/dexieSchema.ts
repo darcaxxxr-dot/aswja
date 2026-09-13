@@ -42,14 +42,14 @@ export class SmartFaceDB extends Dexie {
 
     // v5: Add prayer attendance support - sessionType and prayerName columns
     this.version(5).stores({
-      schools: 'id, name, createdAt, deletedAt',
-      academicYears: 'id, schoolId, name, isActive, startDate, endDate, createdAt, updatedAt, deletedAt',
-      classes: 'id, schoolId, academicYearId, grade, name, createdAt, deletedAt, [schoolId+grade+name]',
-      students: 'id, schoolId, nis, classId, status, name, createdAt, deletedAt, [schoolId+classId], [schoolId+nis]',
-      faceProfiles: 'id, studentId, modelVersion, createdAt, deletedAt',
-      attendanceSessions: 'id, schoolId, classId, date, status, createdAt, deletedAt, sessionType, prayerName, [schoolId+classId+date+sessionType+prayerName]',
-      attendanceRecords: 'id, schoolId, sessionId, studentId, status, timestamp, deletedAt, [sessionId+studentId], [sessionId+timestamp]',
-      users: 'id, schoolId, username, role, createdAt, deletedAt, [schoolId+username]',
+      schools: 'id, name, createdAt, deletedAt, syncVersion',
+      academicYears: 'id, schoolId, name, isActive, startDate, endDate, createdAt, updatedAt, deletedAt, syncVersion',
+      classes: 'id, schoolId, academicYearId, grade, name, createdAt, deletedAt, syncVersion, [schoolId+grade+name]',
+      students: 'id, schoolId, nis, classId, status, name, createdAt, deletedAt, syncVersion, [schoolId+classId], [schoolId+nis]',
+      faceProfiles: 'id, studentId, modelVersion, createdAt, deletedAt, syncVersion',
+      attendanceSessions: 'id, schoolId, classId, date, status, createdAt, deletedAt, sessionType, prayerName, syncVersion, [schoolId+classId+date+sessionType+prayerName]',
+      attendanceRecords: 'id, schoolId, sessionId, studentId, status, timestamp, deletedAt, syncVersion, [sessionId+studentId], [sessionId+timestamp]',
+      users: 'id, schoolId, username, role, createdAt, deletedAt, syncVersion, [schoolId+username]',
       settings: 'key, updatedAt',
       syncQueue: 'id, entity, operation, status, createdAt, [entity+status]'
     });

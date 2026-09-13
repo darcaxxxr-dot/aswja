@@ -1,6 +1,6 @@
 import { getSupabaseClient, testConnection, syncService, type ConnectionTestResult, type SyncReport } from '@services/sync/index';
 import { databaseService } from '@services/database/index';
-import { getOrCreateSchoolId } from '@utils/device';
+import { requireActiveSchoolId } from '@utils/device';
 import { formatTime } from '@utils/device';
 
 export async function renderSupabaseTest(root: HTMLElement): Promise<void> {
@@ -153,7 +153,7 @@ export async function renderSupabaseTest(root: HTMLElement): Promise<void> {
   root.querySelector<HTMLButtonElement>('#btn-insert-school')!.addEventListener('click', async () => {
     const client = getSupabaseClient();
     if (!client) return;
-    const schoolId = getOrCreateSchoolId();
+    const schoolId = requireActiveSchoolId();
     const { data, error } = await client
       .from('schools')
       .upsert({ id: schoolId, name: 'SMA Default (sync test)' }, { onConflict: 'id' })
@@ -200,6 +200,6 @@ export async function renderSupabaseTest(root: HTMLElement): Promise<void> {
   syncService.onStatusChange(() => void refreshStatus());
   await refreshStatus();
   log('Halaman Supabase test siap.');
-  log(`Local schoolId: ${getOrCreateSchoolId()}`);
+  log(`Local schoolId: ${requireActiveSchoolId()}`);
   log(`Supabase URL env: ${import.meta.env.VITE_SUPABASE_URL ?? '(tidak diset)'}`);
 }

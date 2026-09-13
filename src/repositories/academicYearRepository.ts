@@ -1,5 +1,5 @@
 import { db } from '@services/database/dexieSchema';
-import { now, getOrCreateSchoolId } from '@utils/device';
+import { now, requireActiveSchoolId } from '@utils/device';
 import type { AcademicYear } from '@models/types';
 
 export interface CreateAcademicYearInput {
@@ -26,7 +26,7 @@ export class AcademicYearRepository {
     const ts = now();
     const row: AcademicYear = {
       id: crypto.randomUUID(),
-      schoolId: getOrCreateSchoolId(),
+      schoolId: requireActiveSchoolId(),
       name: input.name.trim(),
       startDate: input.startDate.trim(),
       endDate: input.endDate.trim(),

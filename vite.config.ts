@@ -25,9 +25,9 @@ export default defineConfig({
     }
   },
   server: {
-    host: true,
-    port: 5173,
-    strictPort: false
+    host: 'localhost',
+    port: 8001,
+    strictPort: true
   },
   build: {
     target: 'es2020',

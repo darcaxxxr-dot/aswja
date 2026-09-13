@@ -1,10 +1,10 @@
-import { APP_CONFIG, ROUTES } from '@config/app';
+import { ROUTES } from '@config/app';
 import { router } from '@router/index';
 import { installPromptService, getIosInstallInstructions } from '@services/pwa/index';
 import { syncService } from '@services/sync/index';
 import { authService, ROLE_LABELS, SUBROLE_LABELS, type AppUser } from '@services/auth/index';
-import { db } from '@services/database/index';
-import { getOrCreateSchoolId } from '@utils/device';
+import { databaseService } from '@services/database/index';
+import { hasCompletedOnboarding, readActiveSchoolId } from '@utils/device';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
@@ -230,8 +230,8 @@ export function initSyncIndicator(): void {
   };
 
   const renderPanel = async (s: { online: boolean; pendingPush: number; lastSyncAt: number; lastError?: string }) => {
-    const schoolId = getOrCreateSchoolId();
-    const counts = await db.counts();
+    const schoolId = readActiveSchoolId() ?? '';
+    const counts = await databaseService.counts();
     const total = counts.schools + counts.academicYears + counts.classes + counts.students +
       counts.faceProfiles + counts.attendanceSessions + counts.attendanceRecords;
 
@@ -307,6 +307,7 @@ export function initSyncIndicator(): void {
       </details>
       <div style="display:flex;gap:6px;">
         <button id="btn-sync-now" class="btn" style="flex:1;background:#0ea572;color:#fff;padding:6px 8px;font-size:12px;min-height:32px;">⬆ Push &amp; Pull</button>
+        <button id="btn-push-only" class="btn" style="flex:1;background:#1e3a8a;color:#fff;padding:6px 8px;font-size:12px;min-height:32px;">📤 Push Only</button>
         <button id="btn-pull-only" class="btn" style="flex:1;background:rgba(255,255,255,0.12);color:#fff;padding:6px 8px;font-size:12px;min-height:32px;">⬇ Pull Only</button>
       </div>
       <div style="display:flex;gap:6px;margin-top:6px;">
@@ -320,6 +321,7 @@ export function initSyncIndicator(): void {
     `;
 
     const btnNow = document.getElementById('btn-sync-now');
+    const btnPush = document.getElementById('btn-push-only');
     const btnPull = document.getElementById('btn-pull-only');
     const btnCopy = document.getElementById('btn-copy-schoolid');
     const btnLink = document.getElementById('btn-link-school');
@@ -387,27 +389,27 @@ export function initSyncIndicator(): void {
       }
       
       try {
-        // HAPUS SEMUA DATA LOKAL SEBELUM GANTI SCHOOL ID
-        appendLog('🗑 Menghapus data lokal lama...');
-        await db.resetAll();
-        appendLog('✓ IndexedDB cleared');
-        
-        // Clear localStorage keys (keep device_id, auth)
-        const keysToRemove = [
-          APP_CONFIG.schoolIdKey,
-          // sf_school_id_override akan di-set ulang di bawah
-        ];
-        for (const key of keysToRemove) {
-          try { localStorage.removeItem(key); } catch { /* ignore */ }
+        const { linkToSchool } = await import('@services/sync/qrLinkingService');
+        const { getSupabaseProjectRef } = await import('@services/sync/supabaseClient');
+        appendLog('Memverifikasi akses School ID...');
+        const result = await linkToSchool({
+          v: 2,
+          purpose: 'school-link',
+          projectRef: getSupabaseProjectRef() ?? '',
+          schoolId: newId,
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 5 * 60 * 1000,
+          nonce: crypto.randomUUID()
+        });
+        if (!result.ok) {
+          appendLog(`Gagal link: ${result.message}`);
+          return;
         }
-        
-        // SET OVERRIDE BARU
-        localStorage.setItem(APP_CONFIG.schoolIdOverrideKey, newId);
-        appendLog(`✓ School ID diganti: ${oldId} → ${newId}`);
-        appendLog('Refresh halaman untuk menerapkan School ID baru...');
+        appendLog(`School ID diganti: ${oldId} -> ${newId}`);
+        appendLog('Data lokal lama dihapus. Reload untuk pull awal...');
         
         if (btnLink) {
-          btnLink.textContent = '✓ Saved';
+          btnLink.textContent = 'Saved';
           btnLink.style.background = '#059669';
           setTimeout(() => { window.location.reload(); }, 1500);
         }
@@ -425,17 +427,16 @@ export function initSyncIndicator(): void {
 
     btnReset?.addEventListener('click', async () => {
       const confirmed = window.confirm(
-        '⚠ RESET LOCAL DATA\n\n' +
-        'Ini akan MENGHAPUS semua data di browser ini:\n' +
-        '• Semua IndexedDB (siswa, kelas, absensi, face profiles)\n' +
-        '• localStorage (school_id, device_id, auth)\n\n' +
+        'RESET LOCAL DATA\n\n' +
+        'Ini akan MENGHAPUS data bisnis lokal di browser ini:\n' +
+        '- siswa, kelas, absensi, face profiles, settings lokal, sync queue\n\n' +
+        'School ID, onboarding, konfigurasi Supabase, dan session auth tetap dipertahankan.\n' +
         'Data di CLOUD (Supabase) TIDAK akan terhapus.\n' +
-        'Setelah reset, klik "Push & Pull" untuk tarik data dari cloud.\n\n' +
+        'Setelah reset, klik "Pull Only" untuk tarik data dari cloud.\n\n' +
         'Lanjutkan?'
       );
       if (!confirmed) return;
 
-      // Konfirmasi kedua dengan mengetik RESET
       const typed = window.prompt('Ketik "RESET" (huruf besar) untuk konfirmasi:');
       if (typed !== 'RESET') {
         appendLog('Reset dibatalkan.');
@@ -445,71 +446,26 @@ export function initSyncIndicator(): void {
       const resetBtn = btnReset as HTMLButtonElement | null;
       if (resetBtn) {
         resetBtn.disabled = true;
-        resetBtn.textContent = '⏳ Menghapus...';
+        resetBtn.textContent = 'Menghapus...';
       }
-      appendLog('🗑 Memulai reset local data...');
+      appendLog('Memulai reset local data...');
 
       try {
-        // 1. Stop sync supaya tidak auto-push saat reset
         syncService.stopAutoSync();
-
-        // 2. Stop camera kalau aktif
         try {
           const { cameraService } = await import('@services/camera');
           await cameraService.stop();
         } catch {
-          // ignore - camera service might not be available
+          // ignore
         }
-
-        // 3. Clear IndexedDB
-        await db.resetAll();
-        appendLog('✓ IndexedDB cleared');
-
-        // 4. Clear localStorage (hanya keys yang dipakai app)
-        const keysToRemove = [
-          APP_CONFIG.deviceIdKey,
-          APP_CONFIG.schoolIdKey,
-          APP_CONFIG.schoolIdOverrideKey,
-          'auth.lastActivity',
-          'auth.logoutReason'
-        ];
-        for (const key of keysToRemove) {
-          try { localStorage.removeItem(key); } catch { /* ignore */ }
-        }
-        // Also clear any supabase auth keys (pattern-based)
-        for (let i = localStorage.length - 1; i >= 0; i--) {
-          const k = localStorage.key(i);
-          if (k && (k.startsWith('sb-') || k.includes('-auth-token'))) {
-            localStorage.removeItem(k);
-          }
-        }
-        appendLog('✓ localStorage cleared');
-
-        // 5. Unregister service workers
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          for (const reg of regs) {
-            await reg.unregister();
-          }
-          appendLog(`✓ ${regs.length} service worker unregistered`);
-        }
-
-        // 6. Clear caches
-        if ('caches' in window) {
-          const names = await caches.keys();
-          for (const name of names) {
-            await caches.delete(name);
-          }
-          appendLog(`✓ ${names.length} cache cleared`);
-        }
-
-        appendLog('✓ Reset selesai! Mengarahkan ke /login...');
-        setTimeout(() => { window.location.href = '/login'; }, 1500);
+        await databaseService.resetPreservingIdentity();
+        appendLog('Local data cleared. School ID tetap dipertahankan.');
+        setTimeout(() => { window.location.reload(); }, 1000);
       } catch (e) {
-        appendLog(`✗ Reset gagal: ${e instanceof Error ? e.message : String(e)}`);
+        appendLog(`Reset gagal: ${e instanceof Error ? e.message : String(e)}`);
         if (resetBtn) {
           resetBtn.disabled = false;
-          resetBtn.textContent = '🗑 Reset Local Data';
+          resetBtn.textContent = 'Reset Local Data';
         }
       }
     });
@@ -546,6 +502,28 @@ export function initSyncIndicator(): void {
         setTimeout(() => { window.location.reload(); }, 1200);
       } catch (e) {
         appendLog(`Pull failed: ${e instanceof Error ? e.message : String(e)}`);
+        isSyncing = false;
+        const cur = await syncService.getStatus();
+        renderBadge(cur);
+        renderPanel(cur);
+      }
+    });
+
+    btnPush?.addEventListener('click', async () => {
+      isSyncing = true;
+      if (lastStatus) renderBadge(lastStatus);
+      appendLog('Starting push only (sequential)...');
+      try {
+        const r = await syncService.pushOnly();
+        appendLog(`Pushed: ${JSON.stringify({ ok: r.ok, pushed: r.pushed, errors: r.errors })}`);
+        appendLog(`Progress: ${r.progress.map((p) => p.table + ':' + p.status).join(', ')}`);
+        if (r.ok) {
+          appendLog('✓ Push completed successfully');
+        } else {
+          appendLog(`✗ Push completed with errors: ${r.errors.join(', ')}`);
+        }
+      } catch (e) {
+        appendLog(`Push failed: ${e instanceof Error ? e.message : String(e)}`);
         isSyncing = false;
         const cur = await syncService.getStatus();
         renderBadge(cur);
@@ -643,15 +621,12 @@ async function showQrModal() {
 
   // Lazy import QR service
   const { buildPayload, generateQrSvg } = await import('@services/sync/qrLinkingService');
-  const { getOrCreateDeviceId } = await import('@utils/device');
   const payload = buildPayload({});
   if (!payload) {
     const wrap = document.getElementById('qr-canvas-wrap');
     if (wrap) wrap.innerHTML = '<div style="color:#dc2626;font-size:12px;">Supabase belum dikonfigurasi. Buka Settings untuk mengatur.</div>';
     return;
   }
-  payload.from = getOrCreateDeviceId();
-
   const svg = await generateQrSvg(payload);
   const wrap = document.getElementById('qr-canvas-wrap');
   if (wrap) {
@@ -667,7 +642,7 @@ async function showQrModal() {
 
   const info = document.getElementById('qr-info');
   if (info) {
-    const expiresAt = new Date(payload.ts + 5 * 60 * 1000);
+    const expiresAt = new Date(payload.expiresAt);
     info.innerHTML =
       `<div><strong>School ID:</strong> <code style="font-size:11px;">${payload.schoolId}</code></div>` +
       `<div style="margin-top:8px;display:flex;gap:6px;justify-content:center;">` +
@@ -736,7 +711,7 @@ async function showScanModal() {
   if (!scanEl) return;
   const containerId = 'qr-scanner-el';
 
-  const { startScanning, decodePayload, applyPayloadWithReset } = await import('@services/sync/qrLinkingService');
+  const { startScanning, decodePayload, linkToSchool } = await import('@services/sync/qrLinkingService');
   let scanHandle: { stop: () => Promise<void> } | null = null;
     let handled = false;
 
@@ -775,7 +750,7 @@ async function showScanModal() {
         }
         handled = true;
         void (async () => {
-          const result = await applyPayloadWithReset(payload);
+          const result = await linkToSchool(payload);
           const info = document.getElementById('qr-scan-info');
           const errEl = document.getElementById('qr-scan-error');
           if (result.ok) {
@@ -853,6 +828,20 @@ export function pageNotFound(root: HTMLElement): void {
 
 export function initDashboardAndShell(root: HTMLElement): void {
   const mountShell = async (): Promise<HTMLElement> => {
+    // Check for pending school link recovery first
+    const { recoverPendingSchoolReplacement } = await import('@services/sync/qrLinkingService');
+    const recoverySuccess = await recoverPendingSchoolReplacement();
+    if (recoverySuccess) {
+      // If recovery was successful, reload to get fresh state
+      window.location.reload();
+      return root.querySelector<HTMLElement>('#page-root')!; // This won't be reached but needed for TS
+    }
+    
+    if (!hasCompletedOnboarding() || !readActiveSchoolId()) {
+      router.navigate(ROUTES.onboarding);
+      root.innerHTML = '<div id="page-root"></div>';
+      return root.querySelector<HTMLElement>('#page-root')!;
+    }
     await authService.waitForInitialSession();
     const user = await authService.getCurrentUser();
     root.innerHTML = renderAppShell(window.location.pathname, user);
@@ -864,6 +853,13 @@ export function initDashboardAndShell(root: HTMLElement): void {
     initInstallPrompt();
     return root.querySelector<HTMLElement>('#page-root')!;
   };
+
+  router.addRoute(ROUTES.onboarding, async () => {
+    root.innerHTML = '<div id="page-root"></div>';
+    const pageRoot = root.querySelector<HTMLElement>('#page-root')!;
+    const { renderOnboarding } = await import('@pages/onboarding/index');
+    await renderOnboarding(pageRoot);
+  }, 'Onboarding');
 
   router.addRoute(ROUTES.dashboard, async () => {
     const pageRoot = await mountShell();

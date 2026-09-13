@@ -1,11 +1,12 @@
 import './styles/global.css';
 import { router } from '@router/index';
 import { initDashboardAndShell, pageNotFound, initInstallPrompt, initOfflineIndicator, initSyncIndicator } from '@pages/dashboard/shell';
-import { getOrCreateDeviceId, getOrCreateSchoolId } from '@utils/device';
+import { hasCompletedOnboarding, isSchoolProvisioningPending, promoteLegacySchoolOverride, readActiveSchoolId } from '@utils/device';
 import { databaseService } from '@services/database/index';
 import { authService, type AppUser } from '@services/auth/index';
 import { syncService } from '@services/sync/index';
 import { BRAND } from '@config/brand';
+import { ROUTES } from '@config/app';
 
 const PROTECTED_PATHS = ['/dashboard', '/students', '/enrollment', '/classes', '/attendance', '/reports', '/settings', '/supabase-test', '/face-test', '/db-test', '/camera-test'];
 
@@ -19,9 +20,20 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) themeMeta.setAttribute('content', BRAND.themeColor);
 
-  const deviceId = getOrCreateDeviceId();
-  const schoolId = getOrCreateSchoolId();
-  console.info(`[bootstrap] device=${deviceId} school=${schoolId}`);
+  promoteLegacySchoolOverride();
+  // Recover from pending school link replacement if any
+  void (async () => {
+    const { recoverPendingSchoolReplacement } = await import('@services/sync/qrLinkingService');
+    const recoverySuccess = await recoverPendingSchoolReplacement();
+    if (recoverySuccess) {
+      // If recovery was successful, reload to get fresh state
+      window.location.reload();
+    }
+  })();
+
+  const schoolId = readActiveSchoolId();
+  const onboardingComplete = hasCompletedOnboarding() && !!schoolId;
+  console.info(`[bootstrap] school=${schoolId ?? 'none'} onboarding=${onboardingComplete ? 'complete' : 'required'}`);
 
   // Critical: open DB immediately (fast, required for app)
   void databaseService.open().catch((err: unknown) => {
@@ -39,7 +51,10 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
       const handleAuthStateChange = (user: AppUser | null) => {
         if (!authService.isInitialSessionResolved()) return;
         const path = window.location.pathname;
-        if (!user && isProtectedPath(path)) {
+        if (!onboardingComplete && path !== ROUTES.onboarding) {
+          window.history.replaceState({}, '', ROUTES.onboarding);
+          router.navigate(ROUTES.onboarding);
+        } else if (!user && isProtectedPath(path)) {
           window.history.replaceState({}, '', '/login');
           router.navigate('/login');
         } else if (user && (path === '/login' || path === '/')) {
@@ -55,7 +70,9 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
       initInstallPrompt();
       initOfflineIndicator();
 
-      if (window.location.pathname === '/' || window.location.pathname === '') {
+      if (!onboardingComplete && window.location.pathname !== ROUTES.onboarding) {
+        window.history.replaceState({}, '', ROUTES.onboarding);
+      } else if ((window.location.pathname === '/' || window.location.pathname === '') && !authService.isAuthenticated()) {
         window.history.replaceState({}, '', '/login');
       }
 
@@ -70,6 +87,11 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
   }).then(async (): Promise<void> => {
       console.info('[bootstrap] phase 2: init sync');
       initSyncIndicator();
+
+      if (!hasCompletedOnboarding() || !readActiveSchoolId() || isSchoolProvisioningPending()) {
+        console.info('[bootstrap] Auto-sync skipped until onboarding/provisioning is complete');
+        return;
+      }
 
       // Start auto-sync on app boot
       try {
