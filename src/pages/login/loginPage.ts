@@ -3,7 +3,7 @@ import { provisionCurrentSchool } from '@services/sync/provisioningService';
 import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
 import { router } from '@router/index';
-import { markOnboardingCompleted, clearSchoolProvisioningPending } from '@utils/device';
+import { markOnboardingCompleted, clearSchoolProvisioningPending, readActiveSchoolId } from '@utils/device';
 
 export async function renderLogin(root: HTMLElement): Promise<void> {
   // Animated gradient background (mounted once)
@@ -77,24 +77,27 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
     const email = root.querySelector<HTMLInputElement>('#f-email')!.value.trim();
     const password = root.querySelector<HTMLInputElement>('#f-password')!.value;
     try {
-      const user = await authService.signIn(email, password);
+const user = await authService.signIn(email, password);
       msg.innerHTML = `✓ Masuk sebagai <strong>${user.displayName}</strong>`;
       msg.style.color = 'var(--aswja-primary-dark)';
       // Bind profile to the device's active School ID right after sign-in so
       // authenticated RLS policies accept pushes (non-blocking, non-fatal).
-      void provisionCurrentSchool().then((r) => {
+      // Use the user's metadata schoolId if available, otherwise the device's local school ID.
+      const targetSchoolId = user.schoolId ?? readActiveSchoolId() ?? undefined;
+      void provisionCurrentSchool(targetSchoolId).then((r) => {
         if (r.ok) {
-          // Onboarding is now complete: user logged in AND school is provisioned
-          markOnboardingCompleted();
-          clearSchoolProvisioningPending();
+          console.info(`[login] school provisioning ok (${r.status})`);
         } else {
           console.warn(`[login] school provisioning: ${r.status}: ${r.message}`);
         }
-      }).catch(() => undefined);
-      // Use router.navigate (SPA navigation) instead of window.location.pathname
-      // to avoid a full page reload. The auth state listener in app.ts also
-      // navigates to /dashboard, but doing it here too ensures we move on
-      // even if the listener is delayed by the initial-session check.
+        // Mark onboarding complete regardless of provisioning result —
+        // the user is authenticated and has a school ID.
+        markOnboardingCompleted();
+        clearSchoolProvisioningPending();
+      }).catch(() => {
+        markOnboardingCompleted();
+        clearSchoolProvisioningPending();
+      });
       setTimeout(() => { router.navigate(ROUTES.dashboard); }, 300);
     } catch (err: unknown) {
       const m = err instanceof AuthError ? err.message : (err as Error).message;

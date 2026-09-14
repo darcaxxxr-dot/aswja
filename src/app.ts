@@ -12,27 +12,25 @@ import { ROUTES } from '@config/app';
 /**
  * Determines the correct initial route based on:
  * 1. If Supabase is NOT configured → /login (no auth possible)
- * 2. If user is NOT authenticated → /login (or /onboarding if onboarding not complete)
- * 3. If user IS authenticated but has no schoolId → /onboarding
- * 4. If user IS authenticated AND has schoolId → /dashboard
+ * 2. If user is NOT authenticated → /login
+ * 3. If user IS authenticated AND device has a school ID → /dashboard
+ * 4. If user IS authenticated AND device has NO school ID → /onboarding
  */
 function resolveInitialRoute(
   user: AppUser | null,
   supabaseConfigured: boolean
 ): string {
-  // If Supabase is not configured, force login page (no auth possible)
   if (!supabaseConfigured) {
     return '/login';
   }
-  // If user is not authenticated
   if (!user) {
     return '/login';
   }
-  // User IS authenticated — check if they have a school ID
-  if (!user.schoolId) {
+  // Check the device's local school ID, not the user's metadata schoolId
+  const deviceSchoolId = readActiveSchoolId();
+  if (!deviceSchoolId) {
     return ROUTES.onboarding;
   }
-  // Fully authenticated + has school ID
   return ROUTES.dashboard;
 }
 
@@ -76,14 +74,16 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
           const currentSchoolId = readActiveSchoolId();
           if (!currentSchoolId) {
             localStorage.setItem('sf_school_id', user.schoolId);
+          } else if (currentSchoolId !== user.schoolId) {
+            // User's metadata schoolId differs from device's — update device
+            localStorage.setItem('sf_school_id', user.schoolId);
           }
-          // Mark onboarding complete if user has schoolId from auth
           if (!hasCompletedOnboarding()) {
             markOnboardingCompleted();
           }
         }
 
-        // Determine the correct route based on auth + onboarding state
+        // Determine the correct route based on auth + device school ID
         const targetRoute = resolveInitialRoute(user, supabaseConfigured);
 
         // Only navigate if the target is different from current path
