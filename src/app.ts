@@ -9,11 +9,38 @@ import { provisionCurrentSchool } from '@services/sync/provisioningService';
 import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
 
-const PROTECTED_PATHS = ['/dashboard', '/students', '/enrollment', '/classes', '/attendance', '/reports', '/settings', '/supabase-test', '/face-test', '/db-test', '/camera-test'];
-
-function isProtectedPath(path: string): boolean {
-  if (path === '/login' || path === '/' || path === '' || path === '/__setup__') return false;
-  return PROTECTED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+/**
+ * Determines the correct initial route based on:
+ * 1. If Supabase is NOT configured → /login (no auth possible)
+ * 2. If user is NOT authenticated AND onboarding is NOT complete → /onboarding
+ * 3. If user is NOT authenticated AND onboarding IS complete → /login
+ * 4. If user IS authenticated AND onboarding is NOT complete → /onboarding
+ * 5. If user IS authenticated AND onboarding IS complete → /dashboard
+ */
+function resolveInitialRoute(
+  onboardingComplete: boolean,
+  user: AppUser | null,
+  supabaseConfigured: boolean
+): string {
+  // If Supabase is not configured, force login page (no auth possible)
+  if (!supabaseConfigured) {
+    return '/login';
+  }
+  // If user is not authenticated
+  if (!user) {
+    // If onboarding is NOT complete, send to onboarding first
+    if (!onboardingComplete) {
+      return ROUTES.onboarding;
+    }
+    // Onboarding complete but no user → need to login
+    return '/login';
+  }
+  // User IS authenticated
+  if (!onboardingComplete) {
+    return ROUTES.onboarding;
+  }
+  // Fully authenticated + onboarding complete
+  return ROUTES.dashboard;
 }
 
 export function bootstrap(rootElement: HTMLElement): Promise<void> {
@@ -27,14 +54,15 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
     const { recoverPendingSchoolReplacement } = await import('@services/sync/qrLinkingService');
     const recoverySuccess = await recoverPendingSchoolReplacement();
     if (recoverySuccess) {
-      // If recovery was successful, reload to get fresh state
       window.location.reload();
     }
   })();
 
   const schoolId = readActiveSchoolId();
   const onboardingComplete = hasCompletedOnboarding() && !!schoolId;
-  console.info(`[bootstrap] school=${schoolId ?? 'none'} onboarding=${onboardingComplete ? 'complete' : 'required'}`);
+  // Check if Supabase is configured (auth may be disabled)
+  const supabaseConfigured = authService.isEnabled();
+  console.info(`[bootstrap] school=${schoolId ?? 'none'} onboarding=${onboardingComplete ? 'complete' : 'required'} supabase=${supabaseConfigured}`);
 
   // Critical: open DB immediately (fast, required for app)
   void databaseService.open().catch((err: unknown) => {
@@ -45,22 +73,19 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
   // Resolve once auth, shell + router are ready.
   return new Promise<void>((resolve) => {
     console.info('[bootstrap] phase 1: init auth, shell + router');
-    // Restore the Supabase session before rendering protected pages. This keeps
-    // the header's profile/logout state stable across full page reloads.
     authService.init();
-    void authService.waitForInitialSession().then(() => {
+    void authService.waitForInitialSession().then(async () => {
       const handleAuthStateChange = (user: AppUser | null) => {
         if (!authService.isInitialSessionResolved()) return;
         const path = window.location.pathname;
-        if (!onboardingComplete && path !== ROUTES.onboarding) {
-          window.history.replaceState({}, '', ROUTES.onboarding);
-          router.navigate(ROUTES.onboarding);
-        } else if (!user && isProtectedPath(path)) {
-          window.history.replaceState({}, '', '/login');
-          router.navigate('/login');
-        } else if (user && (path === '/login' || path === '/')) {
-          window.history.replaceState({}, '', '/dashboard');
-          router.navigate('/dashboard');
+
+        // Determine the correct route based on auth + onboarding state
+        const targetRoute = resolveInitialRoute(onboardingComplete, user, supabaseConfigured);
+
+        // Only navigate if the target is different from current path
+        if (targetRoute !== path) {
+          window.history.replaceState({}, '', targetRoute);
+          router.navigate(targetRoute);
         }
       };
 
@@ -71,16 +96,18 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
       initInstallPrompt();
       initOfflineIndicator();
 
-      if (!onboardingComplete && window.location.pathname !== ROUTES.onboarding) {
-        window.history.replaceState({}, '', ROUTES.onboarding);
-      } else if ((window.location.pathname === '/' || window.location.pathname === '') && !authService.isAuthenticated()) {
-        window.history.replaceState({}, '', '/login');
+      // Initial route enforcement on first load
+      const initialPath = window.location.pathname;
+      const currentUserPromise = authService.getCurrentUser();
+      const currentUser = await currentUserPromise;
+      const initialRoute = resolveInitialRoute(onboardingComplete, currentUser, supabaseConfigured);
+      if (initialRoute !== initialPath) {
+        window.history.replaceState({}, '', initialRoute);
       }
 
       // Defer this to next tick to let DOM settle first
       queueMicrotask(() => {
         console.info('[bootstrap] phase 1 complete, dispatching app-ready');
-        // Notify that app is fully booted — used by initial-splash in index.html
         window.dispatchEvent(new Event('app-ready'));
         resolve();
       });
@@ -96,9 +123,6 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
       }
 
       // Self-heal: bind the authenticated profile to this device's School ID
-      // (also creates the school row in the cloud). Without this, authenticated
-      // RLS policies reject all pushes with 42501 when profiles.school_id is
-      // NULL or points to a different school.
       if (authService.isEnabled() && authService.isAuthenticated()) {
         const prov = await provisionCurrentSchool(bootSchoolId);
         if (prov.ok) {

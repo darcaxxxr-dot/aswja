@@ -3,6 +3,7 @@ import { provisionCurrentSchool } from '@services/sync/provisioningService';
 import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
 import { router } from '@router/index';
+import { markOnboardingCompleted, clearSchoolProvisioningPending } from '@utils/device';
 
 export async function renderLogin(root: HTMLElement): Promise<void> {
   // Animated gradient background (mounted once)
@@ -82,7 +83,13 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
       // Bind profile to the device's active School ID right after sign-in so
       // authenticated RLS policies accept pushes (non-blocking, non-fatal).
       void provisionCurrentSchool().then((r) => {
-        if (!r.ok) console.warn(`[login] school provisioning: ${r.status}: ${r.message}`);
+        if (r.ok) {
+          // Onboarding is now complete: user logged in AND school is provisioned
+          markOnboardingCompleted();
+          clearSchoolProvisioningPending();
+        } else {
+          console.warn(`[login] school provisioning: ${r.status}: ${r.message}`);
+        }
       }).catch(() => undefined);
       // Use router.navigate (SPA navigation) instead of window.location.pathname
       // to avoid a full page reload. The auth state listener in app.ts also

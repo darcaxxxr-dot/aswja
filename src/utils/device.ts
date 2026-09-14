@@ -43,7 +43,8 @@ export function generateAndStoreNewSchoolId(): string {
   }
   const schoolId = crypto.randomUUID();
   localStorage.setItem(APP_CONFIG.schoolIdKey, schoolId);
-  markOnboardingCompleted();
+  // Do NOT mark onboarding complete yet — user must login first.
+  // markOnboardingCompleted() is called after successful login + provisioning.
   localStorage.setItem(APP_CONFIG.schoolProvisioningPendingKey, 'true');
   clearLegacyIdentityKeys();
   return schoolId;
@@ -54,7 +55,8 @@ export function storeLinkedSchoolId(schoolId: string): void {
     throw new Error('Invalid UUID format.');
   }
   localStorage.setItem(APP_CONFIG.schoolIdKey, schoolId);
-  markOnboardingCompleted();
+  // Do NOT mark onboarding complete yet — user must login first.
+  // markOnboardingCompleted() is called after successful login + provisioning.
   clearSchoolProvisioningPending();
   clearLegacyIdentityKeys();
 }
@@ -64,7 +66,7 @@ export function promoteLegacySchoolOverride(): string | null {
   if (!override || !isValidUuid(override)) return null;
   localStorage.setItem(APP_CONFIG.schoolIdKey, override);
   localStorage.removeItem(APP_CONFIG.schoolIdOverrideKey);
-  markOnboardingCompleted();
+  // Do NOT mark onboarding complete yet — user must login first.
   localStorage.setItem(APP_CONFIG.schoolProvisioningPendingKey, 'true');
   clearPendingSchoolLink();
   return override;

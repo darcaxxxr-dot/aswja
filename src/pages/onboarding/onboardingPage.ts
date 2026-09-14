@@ -1,5 +1,4 @@
 import { ROUTES } from '@config/app';
-import { router } from '@router/index';
 import { authService } from '@services/auth/index';
 import { generateAndStoreNewSchoolId, isValidUuid, readActiveSchoolId } from '@utils/device';
 
@@ -25,14 +24,11 @@ function renderProvisioning(root: HTMLElement, schoolId: string): void {
         <div class="muted" style="font-size:12px;">School ID: <code>${escapeHtml(schoolId)}</code></div>
         <div class="row" style="gap:8px;flex-wrap:wrap;">
           <a href="/login" data-link class="btn btn-primary">Login / cek akun</a>
-          <button id="btn-open-dashboard" class="btn btn-ghost" type="button">Buka dashboard terbatas</button>
         </div>
+        <p class="muted" style="font-size:12px;margin-top:12px;">Setelah login, data akan tersinkronisasi otomatis.</p>
       </section>
     </main>
   `;
-  root.querySelector<HTMLButtonElement>('#btn-open-dashboard')?.addEventListener('click', () => {
-    router.navigate(ROUTES.dashboard);
-  });
 }
 
 export async function renderOnboarding(root: HTMLElement): Promise<void> {
