@@ -145,7 +145,15 @@ export async function linkToSchool(payload: SchoolLinkPayload): Promise<LinkResu
   try {
     prepareLocalReplacement(current, payload.schoolId);
     await commitSchoolReplacement(payload.schoolId);
-    return { ok: true, message: `Berhasil link ke ${payload.schoolName ?? payload.schoolId}.` };
+    // Bind the authenticated profile to the newly linked school so RLS accepts
+    // pushes from this device (non-fatal if it fails — boot self-heal retries).
+    const { provisionCurrentSchool } = await import('./provisioningService');
+    const prov = await provisionCurrentSchool(payload.schoolId);
+    const baseMessage = `Berhasil link ke ${payload.schoolName ?? payload.schoolId}.`;
+    if (!prov.ok) {
+      return { ok: true, message: `${baseMessage} Namun provisioning cloud gagal: ${prov.message}` };
+    }
+    return { ok: true, message: baseMessage };
   } catch (err: unknown) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }

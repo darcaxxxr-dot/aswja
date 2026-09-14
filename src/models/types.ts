@@ -100,6 +100,8 @@ export interface Setting {
   key: string;
   value: string;
   updatedAt: number;
+  /** Present on rows that have been synced to school_settings in the cloud. */
+  syncVersion?: number;
 }
 
 export type SyncEntity = 'student' | 'class' | 'face_profile' | 'session' | 'attendance' | 'user' | 'setting';

@@ -1,10 +1,11 @@
 import './styles/global.css';
 import { router } from '@router/index';
 import { initDashboardAndShell, pageNotFound, initInstallPrompt, initOfflineIndicator, initSyncIndicator } from '@pages/dashboard/shell';
-import { hasCompletedOnboarding, isSchoolProvisioningPending, promoteLegacySchoolOverride, readActiveSchoolId } from '@utils/device';
+import { hasCompletedOnboarding, isSchoolProvisioningPending, promoteLegacySchoolOverride, readActiveSchoolId, clearSchoolProvisioningPending } from '@utils/device';
 import { databaseService } from '@services/database/index';
 import { authService, type AppUser } from '@services/auth/index';
 import { syncService } from '@services/sync/index';
+import { provisionCurrentSchool } from '@services/sync/provisioningService';
 import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
 
@@ -88,8 +89,28 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
       console.info('[bootstrap] phase 2: init sync');
       initSyncIndicator();
 
-      if (!hasCompletedOnboarding() || !readActiveSchoolId() || isSchoolProvisioningPending()) {
-        console.info('[bootstrap] Auto-sync skipped until onboarding/provisioning is complete');
+      const bootSchoolId = readActiveSchoolId();
+      if (!hasCompletedOnboarding() || !bootSchoolId) {
+        console.info('[bootstrap] Auto-sync skipped until onboarding is complete');
+        return;
+      }
+
+      // Self-heal: bind the authenticated profile to this device's School ID
+      // (also creates the school row in the cloud). Without this, authenticated
+      // RLS policies reject all pushes with 42501 when profiles.school_id is
+      // NULL or points to a different school.
+      if (authService.isEnabled() && authService.isAuthenticated()) {
+        const prov = await provisionCurrentSchool(bootSchoolId);
+        if (prov.ok) {
+          clearSchoolProvisioningPending();
+          console.info(`[bootstrap] school provisioning ok (${prov.status})`);
+        } else {
+          console.warn(`[bootstrap] school provisioning unresolved: ${prov.status}: ${prov.message}`);
+        }
+      }
+
+      if (isSchoolProvisioningPending()) {
+        console.info('[bootstrap] Auto-sync skipped until school provisioning is complete');
         return;
       }
 

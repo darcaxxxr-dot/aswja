@@ -5,6 +5,10 @@
 
 -- ============================================================
 -- 1. Normalize profiles.school_id type to text (if needed)
+--    The column must be TEXT: provision_school_for_current_user
+--    compares it with '' and with the TEXT parameter. The direct
+--    ALTER fails while a policy depends on the column, so the
+--    dependent policy is dropped and recreated around the ALTER.
 -- ============================================================
 DO $$
 BEGIN
@@ -14,9 +18,53 @@ BEGIN
       AND column_name = 'school_id'
       AND data_type = 'uuid'
   ) THEN
-    ALTER TABLE public.profiles ALTER COLUMN school_id TYPE TEXT;
+    DROP POLICY IF EXISTS "profiles_select_own_or_same_school" ON public.profiles;
+    ALTER TABLE public.profiles ALTER COLUMN school_id TYPE TEXT USING school_id::text;
+    CREATE POLICY "profiles_select_own_or_same_school"
+      ON public.profiles
+      FOR SELECT
+      TO authenticated
+      USING (
+        id = auth.uid()
+        OR school_id = (SELECT school_id FROM public.profiles WHERE id = auth.uid())
+      );
   END IF;
 END $$;
+
+-- get_user_school() must be re-created after the school_id conversion above.
+-- Its body was `SELECT school_id FROM profiles` — valid while the column was
+-- uuid, but now returns text against the declared `RETURNS uuid`, which fails
+-- at call time with 42P13 "return type mismatch". Casting the body to ::uuid
+-- keeps the declared signature (no DROP needed, no policy dependency broken)
+-- and works for both column types. Policies keep calling it with ::text.
+CREATE OR REPLACE FUNCTION public.get_user_school()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT school_id::uuid FROM public.profiles WHERE id = auth.uid();
+$$;
+
+-- schools.created_by is referenced by the provisioning RPCs but was never
+-- defined in migration 005's schools table. Add it additively.
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS created_by text;
+
+-- sync_logs is written by admin_provision_school but no migration ever
+-- created it (001 only referenced it). Create it if missing.
+CREATE TABLE IF NOT EXISTS public.sync_logs (
+  id text primary key default gen_random_uuid()::text,
+  entity text not null,
+  operation text not null,
+  record_id text,
+  status text,
+  message text,
+  device_id text,
+  school_id text,
+  created_at timestamptz default now()
+);
+ALTER TABLE public.sync_logs ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- 2. Make attendance_records.device_id nullable (additive)
@@ -78,6 +126,7 @@ CREATE TABLE IF NOT EXISTS public.provisioning_audit (
 
 ALTER TABLE public.provisioning_audit ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS admin_read_own_audit ON public.provisioning_audit;
 CREATE POLICY admin_read_own_audit ON public.provisioning_audit
   FOR SELECT USING (auth.uid()::TEXT = admin_user_id);
 
@@ -129,7 +178,7 @@ BEGIN
   SELECT EXISTS (SELECT 1 FROM public.schools WHERE id = p_school_id) INTO v_school_exists;
 
   IF v_school_exists THEN
-    SELECT EXISTS (SELECT 1 FROM public.schools WHERE id = p_school_id AND created_by = v_caller_uid) INTO v_school_owned;
+    SELECT EXISTS (SELECT 1 FROM public.schools WHERE id = p_school_id AND created_by = v_caller_uid::text) INTO v_school_owned;
     IF v_school_owned THEN
       UPDATE public.profiles SET school_id = p_school_id WHERE id = v_caller_uid;
       RETURN QUERY SELECT 'already_provisioned'::TEXT, 'School already exists and is assigned to you'::TEXT;
@@ -141,7 +190,7 @@ BEGIN
   END IF;
 
   INSERT INTO public.schools (id, name, created_by, created_at, updated_at)
-  VALUES (p_school_id, 'Sekolah', v_caller_uid, NOW(), NOW())
+  VALUES (p_school_id, 'Sekolah', v_caller_uid::text, NOW(), NOW())
   ON CONFLICT (id) DO NOTHING;
 
   UPDATE public.profiles SET school_id = p_school_id WHERE id = v_caller_uid;
@@ -201,7 +250,7 @@ BEGIN
 
   IF v_school_id IS NULL THEN
     INSERT INTO public.schools (id, name, created_by, created_at, updated_at)
-    VALUES (p_school_id, 'Sekolah (Admin)', v_caller_uid, NOW(), NOW());
+    VALUES (p_school_id, 'Sekolah (Admin)', v_caller_uid::text, NOW(), NOW());
     v_school_id := p_school_id;
   END IF;
 

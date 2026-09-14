@@ -11,3 +11,5 @@ export {
 export type { SupabaseConfig, ConnectionTestResult, CloudRow } from './supabaseClient';
 export { syncService, SyncService } from './syncService';
 export type { SyncReport, SyncStatusInfo } from './syncService';
+export { provisionCurrentSchool } from './provisioningService';
+export type { ProvisionResult } from './provisioningService';

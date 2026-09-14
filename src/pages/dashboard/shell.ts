@@ -4,6 +4,7 @@ import { installPromptService, getIosInstallInstructions } from '@services/pwa/i
 import { syncService } from '@services/sync/index';
 import { authService, ROLE_LABELS, SUBROLE_LABELS, type AppUser } from '@services/auth/index';
 import { databaseService } from '@services/database/index';
+import { showToast } from '@components/toast';
 import { hasCompletedOnboarding, readActiveSchoolId } from '@utils/device';
 
 function escapeHtml(s: string): string {
@@ -189,6 +190,10 @@ export function initSyncIndicator(): void {
   if (!badge || !label || !dot || !panel || !panelBody) return;
 
   let isSyncing = false;
+  // True while a manual sync button drives the toasts, so the background
+  // status listener does not double-report the same sync result.
+  let suppressStatusToast = false;
+  let lastAutoSyncError = '';
   let lastStatus: { online: boolean; pendingPush: number; lastSyncAt: number; lastError?: string } | null = null;
 
   const formatTime = (ts: number | null | undefined): string => {
@@ -470,51 +475,77 @@ export function initSyncIndicator(): void {
       }
     });
 
+    const finishSyncUi = async () => {
+      isSyncing = false;
+      const cur = await syncService.getStatus();
+      lastStatus = cur;
+      renderBadge(cur);
+      void renderPanel(cur);
+    };
+
+    const sumCounts = (counts: Record<string, number>): number =>
+      Object.values(counts).reduce((a, b) => a + b, 0);
+
     btnNow?.addEventListener('click', async () => {
       isSyncing = true;
+      suppressStatusToast = true;
       if (lastStatus) renderBadge(lastStatus);
       appendLog('Starting full sync (push + pull)...');
       try {
         const r = await syncService.runFullSync();
         appendLog(`Done: pushed=${JSON.stringify(r.pushed)} pulled=${JSON.stringify(r.pulled)} ok=${r.ok} ${r.durationMs}ms`);
         if (!r.ok && r.errors.length) appendLog(`Errors: ${r.errors.join('; ')}`);
+        await finishSyncUi();
         if (r.ok) {
+          showToast(`✓ Sinkronisasi berhasil — ${sumCounts(r.pushed)} push, ${sumCounts(r.pulled)} pull (${Math.round(r.durationMs)}ms)`, 'success');
           appendLog('↻ Halaman akan direfresh untuk menampilkan data terbaru...');
           setTimeout(() => { window.location.reload(); }, 1200);
+        } else {
+          showToast(`✗ Sinkronisasi gagal: ${r.errors[0] ?? 'error tidak diketahui'}`, 'error');
         }
       } catch (e) {
         appendLog(`Failed: ${e instanceof Error ? e.message : String(e)}`);
-        isSyncing = false;
-        const cur = await syncService.getStatus();
-        renderBadge(cur);
-        renderPanel(cur);
+        await finishSyncUi();
+        showToast(`✗ Sinkronisasi gagal: ${e instanceof Error ? e.message : String(e)}`, 'error');
+      } finally {
+        suppressStatusToast = false;
       }
     });
 
     btnPull?.addEventListener('click', async () => {
       isSyncing = true;
+      suppressStatusToast = true;
       if (lastStatus) renderBadge(lastStatus);
       appendLog('Starting pull only...');
       try {
         const r = await syncService.pullAll();
+        await finishSyncUi();
+        showToast(`⬇ Pull selesai — ${sumCounts(r)} baris diterima`, 'success');
         appendLog(`Pulled: ${JSON.stringify(r)}`);
         appendLog('↻ Halaman akan direfresh untuk menampilkan data terbaru...');
         setTimeout(() => { window.location.reload(); }, 1200);
       } catch (e) {
         appendLog(`Pull failed: ${e instanceof Error ? e.message : String(e)}`);
-        isSyncing = false;
-        const cur = await syncService.getStatus();
-        renderBadge(cur);
-        renderPanel(cur);
+        await finishSyncUi();
+        showToast(`✗ Pull gagal: ${e instanceof Error ? e.message : String(e)}`, 'error');
+      } finally {
+        suppressStatusToast = false;
       }
     });
 
     btnPush?.addEventListener('click', async () => {
       isSyncing = true;
+      suppressStatusToast = true;
       if (lastStatus) renderBadge(lastStatus);
       appendLog('Starting push only (sequential)...');
       try {
         const r = await syncService.pushOnly();
+        await finishSyncUi();
+        if (r.ok) {
+          showToast(`📤 Push berhasil — ${sumCounts(r.pushed)} baris dikirim (${Math.round(r.durationMs)}ms)`, 'success');
+        } else {
+          showToast(`✗ Push selesai dengan error: ${r.errors[0] ?? 'error tidak diketahui'}`, 'error');
+        }
         appendLog(`Pushed: ${JSON.stringify({ ok: r.ok, pushed: r.pushed, errors: r.errors })}`);
         appendLog(`Progress: ${r.progress.map((p) => p.table + ':' + p.status).join(', ')}`);
         if (r.ok) {
@@ -524,10 +555,10 @@ export function initSyncIndicator(): void {
         }
       } catch (e) {
         appendLog(`Push failed: ${e instanceof Error ? e.message : String(e)}`);
-        isSyncing = false;
-        const cur = await syncService.getStatus();
-        renderBadge(cur);
-        renderPanel(cur);
+        await finishSyncUi();
+        showToast(`✗ Push gagal: ${e instanceof Error ? e.message : String(e)}`, 'error');
+      } finally {
+        suppressStatusToast = false;
       }
     });
   };
@@ -563,6 +594,18 @@ export function initSyncIndicator(): void {
     lastStatus = s;
     renderBadge(s);
     if (panel && panel.style.display === 'block') void renderPanel(s);
+    // Background (auto-sync) feedback: toast on failure and on recovery.
+    // Deduped by error text so the 30s tick does not spam, and suppressed
+    // while a manual button is reporting the same sync.
+    if (!suppressStatusToast) {
+      if (s.lastError && s.lastError !== lastAutoSyncError) {
+        lastAutoSyncError = s.lastError;
+        showToast(`⚠ Sinkronisasi: ${s.lastError}`, 'error');
+      } else if (!s.lastError && lastAutoSyncError) {
+        lastAutoSyncError = '';
+        showToast('✓ Sinkronisasi kembali normal', 'success');
+      }
+    }
   });
 
   // Fetch current status immediately so badge doesn't stay at "Sync: —"

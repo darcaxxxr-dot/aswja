@@ -1,4 +1,5 @@
 import { authService, AuthError } from '@services/auth/index';
+import { provisionCurrentSchool } from '@services/sync/provisioningService';
 import { BRAND } from '@config/brand';
 import { ROUTES } from '@config/app';
 import { router } from '@router/index';
@@ -78,6 +79,11 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
       const user = await authService.signIn(email, password);
       msg.innerHTML = `✓ Masuk sebagai <strong>${user.displayName}</strong>`;
       msg.style.color = 'var(--aswja-primary-dark)';
+      // Bind profile to the device's active School ID right after sign-in so
+      // authenticated RLS policies accept pushes (non-blocking, non-fatal).
+      void provisionCurrentSchool().then((r) => {
+        if (!r.ok) console.warn(`[login] school provisioning: ${r.status}: ${r.message}`);
+      }).catch(() => undefined);
       // Use router.navigate (SPA navigation) instead of window.location.pathname
       // to avoid a full page reload. The auth state listener in app.ts also
       // navigates to /dashboard, but doing it here too ensures we move on

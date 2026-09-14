@@ -1,8 +1,9 @@
 import { db } from '@services/database/dexieSchema';
 import { settingRepository } from '@repositories/index';
 import { requireActiveSchoolId } from '@utils/device';
+import { authService } from '@services/auth/index';
 import { getSupabaseClient, SupabaseError, cloudSelect, cloudUpsert, emitSyncTelemetry } from './supabaseClient';
-import type { ClassRoom, Student, FaceProfile, AttendanceSession, AttendanceRecord, AcademicYear, School, SessionType, PrayerName } from '@models/types';
+import type { ClassRoom, Student, FaceProfile, AttendanceSession, AttendanceRecord, AcademicYear, School, SessionType, PrayerName, Setting } from '@models/types';
 
 export interface SyncReport {
   ok: boolean;
@@ -44,7 +45,8 @@ const PUSH_TABLES = [
   { local: 'students' as const, cloud: 'students' },
   { local: 'faceProfiles' as const, cloud: 'face_profiles' },
   { local: 'attendanceSessions' as const, cloud: 'attendance_sessions' },
-  { local: 'attendanceRecords' as const, cloud: 'attendance_records' }
+  { local: 'attendanceRecords' as const, cloud: 'attendance_records' },
+  { local: 'settings' as const, cloud: 'school_settings' }
 ] as const;
 
 const PULL_TABLES = [
@@ -54,7 +56,8 @@ const PULL_TABLES = [
   { local: 'students' as const, cloud: 'students' },
   { local: 'faceProfiles' as const, cloud: 'face_profiles' },
   { local: 'attendanceSessions' as const, cloud: 'attendance_sessions' },
-  { local: 'attendanceRecords' as const, cloud: 'attendance_records' }
+  { local: 'attendanceRecords' as const, cloud: 'attendance_records' },
+  { local: 'settings' as const, cloud: 'school_settings' }
 ] as const;
 
 type TableKey = (typeof PUSH_TABLES)[number]['local'];
@@ -67,7 +70,22 @@ type TableRowMap = {
   faceProfiles: FaceProfile;
   attendanceSessions: AttendanceSession;
   attendanceRecords: AttendanceRecord;
+  settings: Setting;
 };
+
+/** Settings keys that are school configuration and get synced across devices. */
+const SYNCABLE_SETTING_PREFIXES = ['attendance.', 'face.', 'liveness.', 'sound.'] as const;
+
+function isSyncableSettingKey(key: string): boolean {
+  return SYNCABLE_SETTING_PREFIXES.some((p) => key.startsWith(p));
+}
+
+/** Multi-vector embedding: non-empty array of non-empty number arrays. */
+function isValidEmbedding(embedding: unknown): boolean {
+  return Array.isArray(embedding)
+    && embedding.length > 0
+    && embedding.every((v) => Array.isArray(v) && v.length > 0);
+}
 
 function getCloudColumns(table: TableKey): string[] {
   switch (table) {
@@ -85,12 +103,14 @@ function getCloudColumns(table: TableKey): string[] {
       return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'session_type', 'prayer_name', 'created_by', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'attendanceRecords':
       return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
+    case 'settings':
+      return ['id', 'school_id', 'key', 'value', 'updated_at', 'sync_version'];
     default:
       return [];
   }
 }
 
-function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string, unknown> {
+function toCloudRow(table: TableKey, row: TableRowMap[TableKey], schoolId?: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
 
   switch (table) {
@@ -193,6 +213,17 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey]): Record<string,
       out.sync_version = r.syncVersion ?? 1;
       break;
     }
+    case 'settings': {
+      const r = row as Setting;
+      if (!schoolId) break;
+      out.id = `${schoolId}:${r.key}`;
+      out.school_id = schoolId;
+      out.key = r.key;
+      out.value = r.value;
+      out.updated_at = new Date(r.updatedAt || Date.now()).toISOString();
+      out.sync_version = r.syncVersion ?? 1;
+      break;
+    }
   }
 
   return out;
@@ -202,7 +233,7 @@ function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
-function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: number; createdAt?: number; timestamp?: number; startTime?: number; endTime?: number; deletedAt?: number; syncVersion?: number }>(table: TableKey, raw: Record<string, unknown>): T | null {
+function fromCloudRow<T extends { id?: string; schoolId?: string; updatedAt?: number; createdAt?: number; timestamp?: number; startTime?: number; endTime?: number; deletedAt?: number; syncVersion?: number }>(table: TableKey, raw: Record<string, unknown>): T | null {
   if (!raw.id) return null;
   const id = String(raw.id);
   const createdAt = raw.created_at ? new Date(String(raw.created_at)).getTime() : Date.now();
@@ -257,10 +288,13 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
 
   if (table === 'faceProfiles') {
     const f = processed as Record<string, unknown> & { studentId: string; embedding: number[][]; modelVersion: string; qualityScore: number };
+    // Skip rows with malformed embeddings instead of writing an empty one —
+    // an empty embedding would erase the student's enrolled face locally.
+    if (!isValidEmbedding(f.embedding)) return null;
     return {
       id,
       studentId: f.studentId,
-      embedding: Array.isArray(f.embedding) && f.embedding.every((e) => Array.isArray(e)) ? f.embedding : [],
+      embedding: f.embedding,
       modelVersion: f.modelVersion ?? 'unknown',
       qualityScore: Number(f.qualityScore ?? 0),
       createdAt,
@@ -325,6 +359,19 @@ function fromCloudRow<T extends { id: string; schoolId?: string; updatedAt?: num
     return {
       id,
       name: sh.name,
+      createdAt,
+      updatedAt,
+      deletedAt,
+      syncVersion
+    } as unknown as T;
+  }
+
+  if (table === 'settings') {
+    const st = processed as Record<string, unknown> & { key?: string; value?: unknown };
+    if (!st.key) return null;
+    return {
+      key: st.key,
+      value: String(st.value ?? ''),
       createdAt,
       updatedAt,
       deletedAt,
@@ -413,7 +460,7 @@ export class SyncService {
     const mismatchedSchools = new Set<string>();
 
     // Order tables by parent dependency: academicYears -> classes -> students -> faceProfiles -> attendanceSessions -> attendanceRecords
-    // Schools is always first (self-referencing)
+    // Schools is always first (self-referencing); settings has no FK dependency.
     const orderedPushTables: typeof PUSH_TABLES = [
       PUSH_TABLES[0], // schools
       PUSH_TABLES[1], // academicYears
@@ -421,7 +468,8 @@ export class SyncService {
       PUSH_TABLES[3], // students
       PUSH_TABLES[4], // faceProfiles
       PUSH_TABLES[5], // attendanceSessions
-      PUSH_TABLES[6]  // attendanceRecords
+      PUSH_TABLES[6], // attendanceRecords
+      PUSH_TABLES[7]  // settings
     ];
 
     for (let i = 0; i < orderedPushTables.length; i++) {
@@ -433,7 +481,23 @@ export class SyncService {
       if (t.local === 'schools') {
         schoolRows = all.filter((r) => (r as School).id === schoolId);
       } else if (t.local === 'faceProfiles') {
+        // Biometric data has no anon policy — pushing unauthenticated would
+        // only produce RLS errors every sync tick.
+        if (!authService.isAuthenticated()) {
+          result[t.cloud] = 0;
+          continue;
+        }
         schoolRows = all.filter((r) => studentSchoolMap.get((r as FaceProfile).studentId) === schoolId);
+        // Never push malformed embeddings: cloudUpsert would overwrite the
+        // cloud copy and silently erase the enrolled face.
+        const validRows = schoolRows.filter((r) => isValidEmbedding((r as FaceProfile).embedding));
+        const skipped = schoolRows.length - validRows.length;
+        if (skipped > 0) {
+          console.warn(`[sync] Push face_profiles: ${skipped} rows skipped (invalid embedding format)`);
+        }
+        schoolRows = validRows;
+      } else if (t.local === 'settings') {
+        schoolRows = all.filter((r) => isSyncableSettingKey((r as Setting).key));
       } else {
         schoolRows = all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId);
         all.filter((r) => (r as { schoolId?: string }).schoolId && (r as { schoolId?: string }).schoolId !== schoolId)
@@ -445,7 +509,7 @@ export class SyncService {
         continue;
       }
 
-      const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r));
+      const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r, schoolId));
       const columns = getCloudColumns(t.local);
 
       try {
@@ -582,6 +646,13 @@ export class SyncService {
     for (const t of PULL_TABLES) {
       const tableStart = performance.now();
       try {
+        // Biometric data has no anon policy: an unauthenticated SELECT returns
+        // zero rows silently. Call that out instead of leaving it a mystery.
+        if (t.local === 'faceProfiles' && !authService.isAuthenticated()) {
+          console.info('[sync] Pull face_profiles skipped: not authenticated. Login to sync enrolled faces.');
+          result[t.cloud] = 0;
+          continue;
+        }
         const { data, error } = await cloudSelect(t.cloud, schoolId, sinceIso);
         if (error) {
           console.warn(`[sync] Pull ${t.cloud} error:`, error);
@@ -600,11 +671,16 @@ export class SyncService {
           continue;
         }
 
-        const mismatchedSchoolRows = rows.filter((r) => String(r.school_id ?? '') !== schoolId);
-        if (mismatchedSchoolRows.length > 0) {
-          console.warn(`[sync] Pull ${t.cloud}: ${mismatchedSchoolRows.length} rows have mismatched school_id, skipping`);
+        // The schools table has no school_id column of its own — rows are
+        // already scoped by the .eq('id', schoolId) query in cloudSelect.
+        const schoolScoped = t.local !== 'schools';
+        if (schoolScoped) {
+          const mismatchedSchoolRows = rows.filter((r) => String(r.school_id ?? '') !== schoolId);
+          if (mismatchedSchoolRows.length > 0) {
+            console.warn(`[sync] Pull ${t.cloud}: ${mismatchedSchoolRows.length} rows have mismatched school_id, skipping`);
+          }
         }
-        const safeRows = rows.filter((r) => String(r.school_id ?? '') === schoolId);
+        const safeRows = schoolScoped ? rows.filter((r) => String(r.school_id ?? '') === schoolId) : rows;
         if (safeRows.length === 0) {
           result[t.cloud] = 0;
           continue;
@@ -716,8 +792,24 @@ export class SyncService {
         updatedAt: ts
       });
     }
-    result.schools = 1;
-    progress[progress.length - 1] = { table: 'schools', status: 'complete', count: 1 };
+    const schoolRow = await db.schools.get(schoolId);
+    if (schoolRow) {
+      const { errors: schoolErrors } = await cloudUpsert(
+        'schools',
+        [toCloudRow('schools', schoolRow)] as never[],
+        getCloudColumns('schools')
+      );
+      if (schoolErrors.length > 0) {
+        errors.push(...schoolErrors);
+        progress[progress.length - 1] = { table: 'schools', status: 'error', error: schoolErrors[0] };
+      } else {
+        result.schools = 1;
+        progress[progress.length - 1] = { table: 'schools', status: 'complete', count: 1 };
+      }
+    } else {
+      errors.push('schools: local school row missing after ensure');
+      progress[progress.length - 1] = { table: 'schools', status: 'error', error: 'local school row missing' };
+    }
 
     const allStudents = await db.students.toArray();
     const studentSchoolMap = new Map<string, string>(allStudents.map((s) => [s.id, s.schoolId]));
@@ -731,7 +823,20 @@ export class SyncService {
       let schoolRows: TableRowMap[TableKey][];
 
       if (t.local === 'faceProfiles') {
+        if (!authService.isAuthenticated()) {
+          result[t.cloud] = 0;
+          progress[progress.length - 1] = { table: t.cloud, status: 'complete', count: 0 };
+          continue;
+        }
         schoolRows = all.filter((r) => studentSchoolMap.get((r as FaceProfile).studentId) === schoolId);
+        const validRows = schoolRows.filter((r) => isValidEmbedding((r as FaceProfile).embedding));
+        const skipped = schoolRows.length - validRows.length;
+        if (skipped > 0) {
+          console.warn(`[sync] Push face_profiles: ${skipped} rows skipped (invalid embedding format)`);
+        }
+        schoolRows = validRows;
+      } else if (t.local === 'settings') {
+        schoolRows = all.filter((r) => isSyncableSettingKey((r as Setting).key));
       } else {
         schoolRows = all.filter((r) => (r as { schoolId?: string }).schoolId === schoolId);
       }
@@ -742,7 +847,7 @@ export class SyncService {
         continue;
       }
 
-      const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r));
+      const cloudRows = schoolRows.map((r) => toCloudRow(t.local, r, schoolId));
       const columns = getCloudColumns(t.local);
 
       try {

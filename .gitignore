@@ -27,3 +27,5 @@ npm-debug.log*
 
 # Testing
 coverage/
+# Vite debug artifacts
+vite.config.ts.timestamp-*
