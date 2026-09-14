@@ -13,8 +13,8 @@ import { ROUTES } from '@config/app';
  * Determines the correct initial route based on:
  * 1. If Supabase is NOT configured → /login (no auth possible)
  * 2. If user is NOT authenticated → /login
- * 3. If user IS authenticated AND device has a school ID → /dashboard
- * 4. If user IS authenticated AND device has NO school ID → /onboarding
+ * 3. If user IS authenticated AND device has school ID AND onboarding complete → /dashboard
+ * 4. Otherwise → /onboarding
  */
 function resolveInitialRoute(
   user: AppUser | null,
@@ -26,9 +26,9 @@ function resolveInitialRoute(
   if (!user) {
     return '/login';
   }
-  // Check the device's local school ID, not the user's metadata schoolId
+  // Device must have a school ID AND onboarding must be marked complete
   const deviceSchoolId = readActiveSchoolId();
-  if (!deviceSchoolId) {
+  if (!deviceSchoolId || !hasCompletedOnboarding()) {
     return ROUTES.onboarding;
   }
   return ROUTES.dashboard;
