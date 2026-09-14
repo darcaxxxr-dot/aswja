@@ -1,7 +1,7 @@
 import './styles/global.css';
 import { router } from '@router/index';
 import { initDashboardAndShell, pageNotFound, initInstallPrompt, initOfflineIndicator, initSyncIndicator } from '@pages/dashboard/shell';
-import { hasCompletedOnboarding, isSchoolProvisioningPending, promoteLegacySchoolOverride, readActiveSchoolId, clearSchoolProvisioningPending } from '@utils/device';
+import { hasCompletedOnboarding, isSchoolProvisioningPending, markOnboardingCompleted, promoteLegacySchoolOverride, readActiveSchoolId, clearSchoolProvisioningPending } from '@utils/device';
 import { databaseService } from '@services/database/index';
 import { authService, type AppUser } from '@services/auth/index';
 import { syncService } from '@services/sync/index';
@@ -12,13 +12,11 @@ import { ROUTES } from '@config/app';
 /**
  * Determines the correct initial route based on:
  * 1. If Supabase is NOT configured → /login (no auth possible)
- * 2. If user is NOT authenticated AND onboarding is NOT complete → /onboarding
- * 3. If user is NOT authenticated AND onboarding IS complete → /login
- * 4. If user IS authenticated AND onboarding is NOT complete → /onboarding
- * 5. If user IS authenticated AND onboarding IS complete → /dashboard
+ * 2. If user is NOT authenticated → /login (or /onboarding if onboarding not complete)
+ * 3. If user IS authenticated but has no schoolId → /onboarding
+ * 4. If user IS authenticated AND has schoolId → /dashboard
  */
 function resolveInitialRoute(
-  onboardingComplete: boolean,
   user: AppUser | null,
   supabaseConfigured: boolean
 ): string {
@@ -28,18 +26,13 @@ function resolveInitialRoute(
   }
   // If user is not authenticated
   if (!user) {
-    // If onboarding is NOT complete, send to onboarding first
-    if (!onboardingComplete) {
-      return ROUTES.onboarding;
-    }
-    // Onboarding complete but no user → need to login
     return '/login';
   }
-  // User IS authenticated
-  if (!onboardingComplete) {
+  // User IS authenticated — check if they have a school ID
+  if (!user.schoolId) {
     return ROUTES.onboarding;
   }
-  // Fully authenticated + onboarding complete
+  // Fully authenticated + has school ID
   return ROUTES.dashboard;
 }
 
@@ -59,10 +52,9 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
   })();
 
   const schoolId = readActiveSchoolId();
-  const onboardingComplete = hasCompletedOnboarding() && !!schoolId;
   // Check if Supabase is configured (auth may be disabled)
   const supabaseConfigured = authService.isEnabled();
-  console.info(`[bootstrap] school=${schoolId ?? 'none'} onboarding=${onboardingComplete ? 'complete' : 'required'} supabase=${supabaseConfigured}`);
+  console.info(`[bootstrap] school=${schoolId ?? 'none'} supabase=${supabaseConfigured}`);
 
   // Critical: open DB immediately (fast, required for app)
   void databaseService.open().catch((err: unknown) => {
@@ -79,8 +71,20 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
         if (!authService.isInitialSessionResolved()) return;
         const path = window.location.pathname;
 
+        // Sync user's schoolId from auth metadata to localStorage for consistency
+        if (user?.schoolId) {
+          const currentSchoolId = readActiveSchoolId();
+          if (!currentSchoolId) {
+            localStorage.setItem('sf_school_id', user.schoolId);
+          }
+          // Mark onboarding complete if user has schoolId from auth
+          if (!hasCompletedOnboarding()) {
+            markOnboardingCompleted();
+          }
+        }
+
         // Determine the correct route based on auth + onboarding state
-        const targetRoute = resolveInitialRoute(onboardingComplete, user, supabaseConfigured);
+        const targetRoute = resolveInitialRoute(user, supabaseConfigured);
 
         // Only navigate if the target is different from current path
         if (targetRoute !== path) {
@@ -100,7 +104,7 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
       const initialPath = window.location.pathname;
       const currentUserPromise = authService.getCurrentUser();
       const currentUser = await currentUserPromise;
-      const initialRoute = resolveInitialRoute(onboardingComplete, currentUser, supabaseConfigured);
+      const initialRoute = resolveInitialRoute(currentUser, supabaseConfigured);
       if (initialRoute !== initialPath) {
         window.history.replaceState({}, '', initialRoute);
       }
