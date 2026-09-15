@@ -9,22 +9,25 @@
 -- ============================================
 
 -- ============================================================
--- 0. Ensure profiles.school_id exists as TEXT
+-- 0. Ensure profiles table exists with correct schema
 -- ============================================================
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  school_id text,
+  display_name text NOT NULL,
+  role text NOT NULL DEFAULT 'OPERATOR',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Ensure school_id is text type
 DO $$
 BEGIN
-  -- Check if school_id column exists
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'profiles' AND column_name = 'school_id'
-  ) THEN
-    ALTER TABLE public.profiles ADD COLUMN school_id text;
-  ELSIF EXISTS (
+  IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'profiles' AND column_name = 'school_id'
       AND data_type = 'uuid'
   ) THEN
-    -- Convert uuid to text
     ALTER TABLE public.profiles ALTER COLUMN school_id TYPE TEXT USING school_id::text;
   END IF;
 
