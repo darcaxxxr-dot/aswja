@@ -11,6 +11,7 @@
 -- ============================================================
 -- 1. Fix get_user_school() to return TEXT (matching column type)
 -- ============================================================
+DROP FUNCTION IF EXISTS public.get_user_school();
 CREATE OR REPLACE FUNCTION public.get_user_school()
 RETURNS text
 LANGUAGE sql
@@ -24,6 +25,7 @@ $$;
 -- ============================================================
 -- 2. Fix get_user_role() to return text consistently
 -- ============================================================
+DROP FUNCTION IF EXISTS public.get_user_role();
 CREATE OR REPLACE FUNCTION public.get_user_role()
 RETURNS text
 LANGUAGE sql
@@ -59,6 +61,8 @@ CREATE POLICY "profiles_update_own"
 -- 4. Fix admin_provision_school to accept TEXT user_id
 --    and use auth.uid() for caller verification (not stale metadata)
 -- ============================================================
+DROP FUNCTION IF EXISTS public.admin_provision_school(TEXT, UUID);
+DROP FUNCTION IF EXISTS public.admin_provision_school(TEXT, TEXT);
 CREATE OR REPLACE FUNCTION public.admin_provision_school(p_school_id TEXT, p_target_user_id TEXT)
 RETURNS TABLE(status TEXT, message TEXT)
 LANGUAGE plpgsql
@@ -129,6 +133,7 @@ GRANT EXECUTE ON FUNCTION public.admin_provision_school(TEXT, TEXT) TO authentic
 -- ============================================================
 -- 5. Fix provision_school_for_current_user to allow SUPERUSER override
 -- ============================================================
+DROP FUNCTION IF EXISTS public.provision_school_for_current_user(TEXT);
 CREATE OR REPLACE FUNCTION public.provision_school_for_current_user(p_school_id TEXT)
 RETURNS TABLE(status TEXT, message TEXT)
 LANGUAGE plpgsql
