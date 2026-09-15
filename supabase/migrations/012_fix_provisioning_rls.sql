@@ -4,7 +4,7 @@
 -- Fixes:
 -- 1. get_user_school() returns text to match profiles.school_id type
 -- 2. admin_provision_school accepts TEXT for p_target_user_id
--- 3. RLS policies use text comparison consistently
+-- 3. RLS policies use ::text casts (safe for both uuid & text columns)
 -- 4. SUPERUSER role check uses auth.uid() instead of stale metadata
 -- ============================================
 
@@ -25,16 +25,19 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'profiles' AND column_name = 'school_id'
+    WHERE table_schema = 'public'
+      AND table_name = 'profiles'
+      AND column_name = 'school_id'
       AND data_type = 'uuid'
   ) THEN
     ALTER TABLE public.profiles ALTER COLUMN school_id TYPE TEXT USING school_id::text;
   END IF;
 
-  -- Ensure role column exists
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'profiles' AND column_name = 'role'
+    WHERE table_schema = 'public'
+      AND table_name = 'profiles'
+      AND column_name = 'role'
   ) THEN
     ALTER TABLE public.profiles ADD COLUMN role text DEFAULT 'OPERATOR';
   END IF;
@@ -51,7 +54,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT COALESCE(school_id, '') FROM public.profiles WHERE id = auth.uid();
+  SELECT COALESCE(school_id::text, '') FROM public.profiles WHERE id = auth.uid();
 $$;
 
 -- ============================================================
@@ -78,7 +81,7 @@ CREATE POLICY "profiles_select_own_or_same_school"
   TO authenticated
   USING (
     id = auth.uid()
-    OR school_id = (SELECT school_id FROM public.profiles WHERE id = auth.uid())
+    OR school_id::text = (SELECT school_id::text FROM public.profiles WHERE id = auth.uid())
   );
 
 DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
@@ -91,7 +94,6 @@ CREATE POLICY "profiles_update_own"
 
 -- ============================================================
 -- 4. Fix admin_provision_school to accept TEXT user_id
---    and use auth.uid() for caller verification (not stale metadata)
 -- ============================================================
 DROP FUNCTION IF EXISTS public.admin_provision_school(TEXT, UUID) CASCADE;
 DROP FUNCTION IF EXISTS public.admin_provision_school(TEXT, TEXT) CASCADE;
@@ -104,7 +106,6 @@ AS $$
 DECLARE
   v_caller_uid UUID;
   v_caller_profile RECORD;
-  v_target_profile RECORD;
   v_school_id TEXT;
 BEGIN
   v_caller_uid := auth.uid();
@@ -132,13 +133,13 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Verify target user exists (p_target_user_id is a UUID string)
-  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_target_user_id::UUID) THEN
+  -- Verify target user exists (cast both sides to text for safety)
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id::text = p_target_user_id) THEN
     RETURN QUERY SELECT 'error'::TEXT, 'Target user not found'::TEXT;
     RETURN;
   END IF;
 
-  SELECT id INTO v_school_id FROM public.schools WHERE id = p_school_id;
+  SELECT id::text INTO v_school_id FROM public.schools WHERE id::text = p_school_id;
 
   IF v_school_id IS NULL THEN
     INSERT INTO public.schools (id, name, created_by, created_at, updated_at)
@@ -147,7 +148,7 @@ BEGIN
   END IF;
 
   -- Force-assign the school_id regardless of existing value
-  UPDATE public.profiles SET school_id = p_school_id WHERE id = p_target_user_id::UUID;
+  UPDATE public.profiles SET school_id = p_school_id WHERE id::text = p_target_user_id;
 
   INSERT INTO public.sync_logs (entity, operation, record_id, status, created_at)
   VALUES ('admin_provision', 'assign_school', p_target_user_id, 'completed', NOW());
@@ -206,8 +207,8 @@ BEGIN
   END IF;
 
   -- Non-SUPERUSER: check if already assigned
-  IF v_caller_profile.school_id IS NOT NULL AND v_caller_profile.school_id <> '' THEN
-    IF v_caller_profile.school_id = p_school_id THEN
+  IF v_caller_profile.school_id IS NOT NULL AND v_caller_profile.school_id::text <> '' THEN
+    IF v_caller_profile.school_id::text = p_school_id THEN
       RETURN QUERY SELECT 'already_provisioned'::TEXT, 'School already provisioned for this user'::TEXT;
       RETURN;
     ELSE
@@ -216,10 +217,13 @@ BEGIN
     END IF;
   END IF;
 
-  SELECT EXISTS (SELECT 1 FROM public.schools WHERE id = p_school_id) INTO v_school_exists;
+  SELECT EXISTS (SELECT 1 FROM public.schools WHERE id::text = p_school_id) INTO v_school_exists;
 
   IF v_school_exists THEN
-    SELECT EXISTS (SELECT 1 FROM public.schools WHERE id = p_school_id AND created_by = v_caller_uid::text) INTO v_school_owned;
+    SELECT EXISTS (
+      SELECT 1 FROM public.schools
+      WHERE id::text = p_school_id AND created_by::text = v_caller_uid::text
+    ) INTO v_school_owned;
     IF v_school_owned THEN
       UPDATE public.profiles SET school_id = p_school_id WHERE id = v_caller_uid;
       RETURN QUERY SELECT 'already_provisioned'::TEXT, 'School already exists and is assigned to you'::TEXT;
@@ -244,67 +248,69 @@ REVOKE ALL ON FUNCTION public.provision_school_for_current_user(TEXT) FROM PUBLI
 GRANT EXECUTE ON FUNCTION public.provision_school_for_current_user(TEXT) TO authenticated;
 
 -- ============================================================
--- 6. Recreate school-isolated RLS policies using text get_user_school()
+-- 6. Recreate school-isolated RLS policies using ::text casts
+--    (safe whether school_id columns are text OR uuid)
 -- ============================================================
 DROP POLICY IF EXISTS "ay_school_isolation" ON public.academic_years;
 CREATE POLICY "ay_school_isolation"
   ON public.academic_years FOR ALL TO authenticated
-  USING (school_id = public.get_user_school())
-  WITH CHECK (school_id = public.get_user_school());
+  USING (school_id::text = public.get_user_school()::text)
+  WITH CHECK (school_id::text = public.get_user_school()::text);
 
 DROP POLICY IF EXISTS "classes_school_isolation" ON public.classes;
 CREATE POLICY "classes_school_isolation"
   ON public.classes FOR ALL TO authenticated
-  USING (school_id = public.get_user_school())
-  WITH CHECK (school_id = public.get_user_school());
+  USING (school_id::text = public.get_user_school()::text)
+  WITH CHECK (school_id::text = public.get_user_school()::text);
 
 DROP POLICY IF EXISTS "students_school_isolation" ON public.students;
 CREATE POLICY "students_school_isolation"
   ON public.students FOR ALL TO authenticated
-  USING (school_id = public.get_user_school())
-  WITH CHECK (school_id = public.get_user_school());
+  USING (school_id::text = public.get_user_school()::text)
+  WITH CHECK (school_id::text = public.get_user_school()::text);
 
 DROP POLICY IF EXISTS "face_profiles_school_isolation" ON public.face_profiles;
 CREATE POLICY "face_profiles_school_isolation"
   ON public.face_profiles FOR ALL TO authenticated
   USING (
-    student_id IN (
-      SELECT id FROM public.students WHERE school_id = public.get_user_school()
+    student_id::text IN (
+      SELECT id::text FROM public.students
+      WHERE school_id::text = public.get_user_school()::text
     )
   )
   WITH CHECK (
-    student_id IN (
-      SELECT id FROM public.students WHERE school_id = public.get_user_school()
+    student_id::text IN (
+      SELECT id::text FROM public.students
+      WHERE school_id::text = public.get_user_school()::text
     )
   );
 
 DROP POLICY IF EXISTS "sessions_school_isolation" ON public.attendance_sessions;
 CREATE POLICY "sessions_school_isolation"
   ON public.attendance_sessions FOR ALL TO authenticated
-  USING (school_id = public.get_user_school())
-  WITH CHECK (school_id = public.get_user_school());
+  USING (school_id::text = public.get_user_school()::text)
+  WITH CHECK (school_id::text = public.get_user_school()::text);
 
 DROP POLICY IF EXISTS "records_school_isolation" ON public.attendance_records;
 CREATE POLICY "records_school_isolation"
   ON public.attendance_records FOR ALL TO authenticated
-  USING (school_id = public.get_user_school())
-  WITH CHECK (school_id = public.get_user_school());
+  USING (school_id::text = public.get_user_school()::text)
+  WITH CHECK (school_id::text = public.get_user_school()::text);
 
-DROP POLICY IF EXISTS "settings_school_isolation" ON public.settings;
-CREATE POLICY "settings_school_isolation"
-  ON public.settings FOR ALL TO authenticated
-  USING (school_id = public.get_user_school())
-  WITH CHECK (school_id = public.get_user_school());
+-- NOTE: public.settings sengaja DILEWATI karena tabel ini key/value global
+-- tanpa kolom school_id (lihat migration 005). Policy-nya sudah diatur di
+-- migration 010: settings_read_anon, settings_read_auth,
+-- settings_admin_write_auth. Untuk config per-school, gunakan tabel
+-- public.school_settings (migration 011).
 
 DROP POLICY IF EXISTS "sync_logs_school_isolation" ON public.sync_logs;
 CREATE POLICY "sync_logs_school_isolation"
   ON public.sync_logs FOR ALL TO authenticated
-  USING (school_id = public.get_user_school())
-  WITH CHECK (school_id = public.get_user_school());
+  USING (school_id::text = public.get_user_school()::text)
+  WITH CHECK (school_id::text = public.get_user_school()::text);
 
 -- ============================================================
 -- 7. Ensure profiles role is correctly set for SUPERUSER
---    Update any profile that has SUPABASE_METADATA role = SUPERUSER
 -- ============================================================
 DO $$
 BEGIN
@@ -319,7 +325,7 @@ BEGIN
     WHERE u.id = p.id
     AND u.raw_user_meta_data->>'role' = 'SUPERUSER'
   )
-  AND p.role <> 'SUPERUSER';
+  AND COALESCE(p.role, '') <> 'SUPERUSER';
 END $$;
 
 -- ============================================================
@@ -337,7 +343,10 @@ DO $$
 DECLARE
   tbl TEXT;
 BEGIN
-  FOR tbl IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('pg_stat_user_tables') LOOP
+  FOR tbl IN
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND tablename NOT IN ('pg_stat_user_tables')
+  LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = tbl) THEN
       RAISE NOTICE 'Table % has no RLS policies — ensure RLS is enabled', tbl;
     END IF;
