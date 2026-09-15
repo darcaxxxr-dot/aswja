@@ -90,7 +90,8 @@ const user = await authService.signIn(email, password);
       clearSchoolProvisioningPending();
       // Bind profile to the device's active School ID right after sign-in so
       // authenticated RLS policies accept pushes (non-blocking, non-fatal).
-      void provisionCurrentSchool(targetSchoolId ?? undefined).then((r) => {
+      // Pass the user object so provisioningService can check role directly.
+      void provisionCurrentSchool(targetSchoolId ?? undefined, user).then((r) => {
         if (r.ok) {
           console.info(`[login] school provisioning ok (${r.status})`);
         } else {

@@ -1,6 +1,6 @@
 import { getSupabaseClient } from './supabaseClient';
 import { readActiveSchoolId } from '@utils/device';
-import { authService } from '@services/auth/index';
+import { authService, type AppUser } from '@services/auth/index';
 
 export interface ProvisionResult {
   ok: boolean;
@@ -21,8 +21,11 @@ export interface ProvisionResult {
  * school. SUPERUSER callers fall back to `admin_provision_school`, which may
  * re-assign the profile — needed to self-heal devices linked to a school
  * other than the one their profile was provisioned with.
+ *
+ * @param schoolId - The target school ID. Falls back to device's local school ID.
+ * @param user - Optional AppUser object to check role without additional RPC call.
  */
-export async function provisionCurrentSchool(schoolId?: string): Promise<ProvisionResult> {
+export async function provisionCurrentSchool(schoolId?: string, user?: AppUser | null): Promise<ProvisionResult> {
   const targetSchoolId = schoolId ?? readActiveSchoolId();
   if (!targetSchoolId) {
     return { ok: false, status: 'no_school', message: 'School ID aktif belum tersedia.' };
@@ -32,10 +35,10 @@ export async function provisionCurrentSchool(schoolId?: string): Promise<Provisi
     return { ok: false, status: 'no_client', message: 'Supabase belum dikonfigurasi.' };
   }
   try {
-    // Check if user is SUPERUSER first — if so, use admin RPC directly
-    const currentUser = await authService.getCurrentUser();
+    // Check if user is SUPERUSER — if so, use admin RPC directly
+    const currentUser = user ?? await authService.getCurrentUser();
     if (currentUser?.role === 'SUPERUSER') {
-      return await adminProvisionSchool(targetSchoolId);
+      return await adminProvisionSchool(targetSchoolId, currentUser.id);
     }
     const { data, error } = await client.rpc('provision_school_for_current_user', {
       p_school_id: targetSchoolId
@@ -59,7 +62,7 @@ export async function provisionCurrentSchool(schoolId?: string): Promise<Provisi
   }
 }
 
-async function adminProvisionSchool(schoolId: string): Promise<ProvisionResult> {
+async function adminProvisionSchool(schoolId: string, targetUserId: string): Promise<ProvisionResult> {
   const user = await authService.getCurrentUser();
   if (!user) {
     return { ok: false, status: 'no_user', message: 'User tidak ditemukan.' };
@@ -67,7 +70,7 @@ async function adminProvisionSchool(schoolId: string): Promise<ProvisionResult> 
   try {
     const { data, error } = await getSupabaseClient()!.rpc('admin_provision_school', {
       p_school_id: schoolId,
-      p_target_user_id: user.id
+      p_target_user_id: targetUserId
     });
     if (error) {
       return { ok: false, status: 'admin_rpc_error', message: error.message };
