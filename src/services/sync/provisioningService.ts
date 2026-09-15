@@ -32,6 +32,11 @@ export async function provisionCurrentSchool(schoolId?: string): Promise<Provisi
     return { ok: false, status: 'no_client', message: 'Supabase belum dikonfigurasi.' };
   }
   try {
+    // Check if user is SUPERUSER first — if so, use admin RPC directly
+    const currentUser = await authService.getCurrentUser();
+    if (currentUser?.role === 'SUPERUSER') {
+      return await adminProvisionSchool(targetSchoolId);
+    }
     const { data, error } = await client.rpc('provision_school_for_current_user', {
       p_school_id: targetSchoolId
     });
@@ -45,7 +50,8 @@ export async function provisionCurrentSchool(schoolId?: string): Promise<Provisi
       return { ok: true, status, message };
     }
     if (status === 'error' && /different school/i.test(message)) {
-      return await adminProvisionFallback(targetSchoolId, message);
+      // Non-SUPERUSER with conflict — cannot re-assign
+      return { ok: false, status: 'conflict', message };
     }
     return { ok: false, status, message };
   } catch (err: unknown) {
@@ -53,10 +59,10 @@ export async function provisionCurrentSchool(schoolId?: string): Promise<Provisi
   }
 }
 
-async function adminProvisionFallback(schoolId: string, baseMessage: string): Promise<ProvisionResult> {
+async function adminProvisionSchool(schoolId: string): Promise<ProvisionResult> {
   const user = await authService.getCurrentUser();
-  if (!user || user.role !== 'SUPERUSER') {
-    return { ok: false, status: 'conflict', message: baseMessage };
+  if (!user) {
+    return { ok: false, status: 'no_user', message: 'User tidak ditemukan.' };
   }
   try {
     const { data, error } = await getSupabaseClient()!.rpc('admin_provision_school', {
@@ -64,7 +70,7 @@ async function adminProvisionFallback(schoolId: string, baseMessage: string): Pr
       p_target_user_id: user.id
     });
     if (error) {
-      return { ok: false, status: 'admin_rpc_error', message: `${baseMessage}; fallback admin gagal: ${error.message}` };
+      return { ok: false, status: 'admin_rpc_error', message: error.message };
     }
     const row = Array.isArray(data) ? data[0] : (data as { status?: string; message?: string } | null);
     const status = row?.status ?? 'unknown';
@@ -72,9 +78,9 @@ async function adminProvisionFallback(schoolId: string, baseMessage: string): Pr
     if (status === 'provisioned' || status === 'already_provisioned') {
       return { ok: true, status: `admin_${status}`, message };
     }
-    return { ok: false, status: `admin_${status}`, message: `${baseMessage}; fallback admin: ${message}` };
+    return { ok: false, status: `admin_${status}`, message };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, status: 'admin_exception', message: `${baseMessage}; fallback admin: ${msg}` };
+    return { ok: false, status: 'admin_exception', message: msg };
   }
 }

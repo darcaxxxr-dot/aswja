@@ -83,6 +83,7 @@ const user = await authService.signIn(email, password);
       // Bind profile to the device's active School ID right after sign-in so
       // authenticated RLS policies accept pushes (non-blocking, non-fatal).
       // Use the user's metadata schoolId if available, otherwise the device's local school ID.
+      // For SUPERUSERs, provisionCurrentSchool will use admin_provision_school to re-assign.
       const targetSchoolId = user.schoolId ?? readActiveSchoolId() ?? undefined;
       void provisionCurrentSchool(targetSchoolId).then((r) => {
         if (r.ok) {
