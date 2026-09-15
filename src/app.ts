@@ -69,18 +69,9 @@ export function bootstrap(rootElement: HTMLElement): Promise<void> {
         if (!authService.isInitialSessionResolved()) return;
         const path = window.location.pathname;
 
-        // Sync user's schoolId from auth metadata to localStorage for consistency
-        if (user?.schoolId) {
-          const currentSchoolId = readActiveSchoolId();
-          if (!currentSchoolId) {
-            localStorage.setItem('sf_school_id', user.schoolId);
-          } else if (currentSchoolId !== user.schoolId) {
-            // User's metadata schoolId differs from device's — update device
-            localStorage.setItem('sf_school_id', user.schoolId);
-          }
-          if (!hasCompletedOnboarding()) {
-            markOnboardingCompleted();
-          }
+        // Ensure onboarding is marked complete if user has a school ID
+        if (user?.schoolId && !hasCompletedOnboarding()) {
+          markOnboardingCompleted();
         }
 
         // Determine the correct route based on auth + device school ID

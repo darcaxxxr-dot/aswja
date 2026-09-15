@@ -80,25 +80,23 @@ export async function renderLogin(root: HTMLElement): Promise<void> {
 const user = await authService.signIn(email, password);
       msg.innerHTML = `✓ Masuk sebagai <strong>${user.displayName}</strong>`;
       msg.style.color = 'var(--aswja-primary-dark)';
+      // Set school ID and mark onboarding complete immediately before
+      // navigation, so localStorage is persisted before the next page loads.
+      const targetSchoolId = user.schoolId ?? readActiveSchoolId();
+      if (targetSchoolId) {
+        localStorage.setItem('sf_school_id', targetSchoolId);
+      }
+      markOnboardingCompleted();
+      clearSchoolProvisioningPending();
       // Bind profile to the device's active School ID right after sign-in so
       // authenticated RLS policies accept pushes (non-blocking, non-fatal).
-      // Use the user's metadata schoolId if available, otherwise the device's local school ID.
-      // For SUPERUSERs, provisionCurrentSchool will use admin_provision_school to re-assign.
-      const targetSchoolId = user.schoolId ?? readActiveSchoolId() ?? undefined;
-      void provisionCurrentSchool(targetSchoolId).then((r) => {
+      void provisionCurrentSchool(targetSchoolId ?? undefined).then((r) => {
         if (r.ok) {
           console.info(`[login] school provisioning ok (${r.status})`);
         } else {
           console.warn(`[login] school provisioning: ${r.status}: ${r.message}`);
         }
-        // Mark onboarding complete regardless of provisioning result —
-        // the user is authenticated and has a school ID.
-        markOnboardingCompleted();
-        clearSchoolProvisioningPending();
-      }).catch(() => {
-        markOnboardingCompleted();
-        clearSchoolProvisioningPending();
-      });
+      }).catch(() => undefined);
       setTimeout(() => { router.navigate(ROUTES.dashboard); }, 300);
     } catch (err: unknown) {
       const m = err instanceof AuthError ? err.message : (err as Error).message;
