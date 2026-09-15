@@ -9,6 +9,35 @@
 -- ============================================
 
 -- ============================================================
+-- 0. Ensure profiles.school_id exists as TEXT
+-- ============================================================
+DO $$
+BEGIN
+  -- Check if school_id column exists
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'profiles' AND column_name = 'school_id'
+  ) THEN
+    ALTER TABLE public.profiles ADD COLUMN school_id text;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'profiles' AND column_name = 'school_id'
+      AND data_type = 'uuid'
+  ) THEN
+    -- Convert uuid to text
+    ALTER TABLE public.profiles ALTER COLUMN school_id TYPE TEXT USING school_id::text;
+  END IF;
+
+  -- Ensure role column exists
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'profiles' AND column_name = 'role'
+  ) THEN
+    ALTER TABLE public.profiles ADD COLUMN role text DEFAULT 'OPERATOR';
+  END IF;
+END $$;
+
+-- ============================================================
 -- 1. Fix get_user_school() to return TEXT (matching column type)
 -- ============================================================
 DROP FUNCTION IF EXISTS public.get_user_school() CASCADE;
