@@ -23,48 +23,60 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 --    Email: superuser@aswja.local
 --    Password: Aswaja@2026!
 -- ============================================================
-SELECT auth.admin.create_user(
-  email => 'superuser@aswja.local',
-  password => 'Aswaja@2026!',
-  user_metadata => jsonb_build_object(
-    'display_name', 'Superuser ASWJA',
-    'role', 'SUPERUSER',
-    'sub_role', 'KEPALA_MADRASAH'
-  )
-)
-ON CONFLICT DO NOTHING;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = 'superuser@aswja.local') THEN
+    PERFORM auth.admin.create_user(
+      email => 'superuser@aswja.local',
+      password => 'Aswaja@2026!',
+      user_metadata => jsonb_build_object(
+        'display_name', 'Superuser ASWJA',
+        'role', 'SUPERUSER',
+        'sub_role', 'KEPALA_MADRASAH'
+      )
+    );
+  END IF;
+END $$;
 
 -- ============================================================
 -- 2. KEPALA SEKOLAH (school admin)
 --    Email: kepala@aswja.local
 --    Password: Aswaja@2026!
 -- ============================================================
-SELECT auth.admin.create_user(
-  email => 'kepala@aswja.local',
-  password => 'Aswaja@2026!',
-  user_metadata => jsonb_build_object(
-    'display_name', 'Kepala Sekolah',
-    'role', 'USER',
-    'sub_role', 'KEPALA_MADRASAH'
-  )
-)
-ON CONFLICT DO NOTHING;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = 'kepala@aswja.local') THEN
+    PERFORM auth.admin.create_user(
+      email => 'kepala@aswja.local',
+      password => 'Aswaja@2026!',
+      user_metadata => jsonb_build_object(
+        'display_name', 'Kepala Sekolah',
+        'role', 'USER',
+        'sub_role', 'KEPALA_MADRASAH'
+      )
+    );
+  END IF;
+END $$;
 
 -- ============================================================
 -- 3. OPERATOR (regular staff)
 --    Email: operator@aswja.local
 --    Password: Aswaja@2026!
 -- ============================================================
-SELECT auth.admin.create_user(
-  email => 'operator@aswja.local',
-  password => 'Aswaja@2026!',
-  user_metadata => jsonb_build_object(
-    'display_name', 'Operator',
-    'role', 'OPERATOR',
-    'sub_role', null
-  )
-)
-ON CONFLICT DO NOTHING;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = 'operator@aswja.local') THEN
+    PERFORM auth.admin.create_user(
+      email => 'operator@aswja.local',
+      password => 'Aswaja@2026!',
+      user_metadata => jsonb_build_object(
+        'display_name', 'Operator',
+        'role', 'OPERATOR',
+        'sub_role', null
+      )
+    );
+  END IF;
+END $$;
 
 -- ============================================================
 -- 4. Ensure profiles exist for all test users
