@@ -102,7 +102,7 @@ function getCloudColumns(table: TableKey): string[] {
     case 'attendanceSessions':
       return ['id', 'school_id', 'class_id', 'date', 'start_time', 'end_time', 'status', 'session_type', 'prayer_name', 'created_by', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'attendanceRecords':
-      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
+      return ['id', 'school_id', 'session_id', 'student_id', 'timestamp', 'status', 'confidence', 'device_id', 'created_by', 'created_at', 'updated_at', 'deleted_at', 'sync_version'];
     case 'settings':
       return ['id', 'school_id', 'key', 'value', 'updated_at', 'sync_version'];
     default:
@@ -207,6 +207,8 @@ function toCloudRow(table: TableKey, row: TableRowMap[TableKey], schoolId?: stri
       out.timestamp = new Date(r.timestamp).toISOString();
       out.status = r.status;
       out.confidence = r.confidence;
+      if (r.deviceId) out.device_id = r.deviceId;
+      if (r.createdById) out.created_by = r.createdById;
       out.created_at = new Date(r.createdAt).toISOString();
       if (r.updatedAt) out.updated_at = new Date(r.updatedAt).toISOString();
       if (r.deletedAt) out.deleted_at = new Date(r.deletedAt).toISOString();
@@ -249,7 +251,7 @@ function fromCloudRow<T extends { id?: string; schoolId?: string; updatedAt?: nu
   const syncVersion = processed.syncVersion ? Number(processed.syncVersion) : 1;
 
   if (table === 'attendanceRecords') {
-    const ar = processed as Record<string, unknown> & { sessionId: string; studentId: string; status: string; confidence: number; deviceId?: string | null };
+    const ar = processed as Record<string, unknown> & { sessionId: string; studentId: string; status: string; confidence: number; deviceId?: string | null; createdBy?: string };
     return {
       id,
       schoolId: String(ar.school_id ?? ''),
@@ -259,6 +261,7 @@ function fromCloudRow<T extends { id?: string; schoolId?: string; updatedAt?: nu
       status: ar.status as AttendanceRecord['status'],
       confidence: Number(ar.confidence ?? 0),
       deviceId: ar.deviceId ?? undefined,
+      createdById: ar.createdBy ?? undefined,
       createdAt,
       updatedAt,
       deletedAt,

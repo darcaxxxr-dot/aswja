@@ -297,6 +297,29 @@ CREATE POLICY "records_school_isolation"
   USING (school_id::text = public.get_user_school()::text)
   WITH CHECK (school_id::text = public.get_user_school()::text);
 
+-- Remove overly permissive anon policy for attendance_records
+-- (anon clients should not be able to read/write attendance data)
+DROP POLICY IF EXISTS "anon_attendance_records_sync" ON public.attendance_records;
+
+-- ============================================================
+-- 6b. Add created_by and deleted_at columns to attendance_records
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'attendance_records' AND column_name = 'created_by'
+  ) THEN
+    ALTER TABLE public.attendance_records ADD COLUMN created_by text;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'attendance_records' AND column_name = 'deleted_at'
+  ) THEN
+    ALTER TABLE public.attendance_records ADD COLUMN deleted_at timestamptz;
+  END IF;
+END $$;
+
 -- NOTE: public.settings sengaja DILEWATI karena tabel ini key/value global
 -- tanpa kolom school_id (lihat migration 005). Policy-nya sudah diatur di
 -- migration 010: settings_read_anon, settings_read_auth,

@@ -1,6 +1,8 @@
 import { attendanceRepository, studentRepository, classRepository, faceProfileRepository, settingRepository } from '@repositories/index';
 import { cameraService } from '@services/camera';
 import { faceRecognitionService, livenessService, faceModelLoader, type RecognitionResult, type LivenessChallenge } from '@services/face';
+import { authService } from '@services/auth/index';
+import { generateId } from '@utils/device';
 import type { AttendanceRecord, AttendanceSession, AttendanceStatus, ClassRoom, Student, PrayerName } from '@models/types';
 
 export interface AttendanceConfig {
@@ -276,11 +278,14 @@ async openPrayerSession(
   ): Promise<AttendanceRecord> {
     const config = await attendanceConfigService.load();
     const status = determineAutoStatus(config);
+    const user = await authService.getCurrentUser();
     return attendanceRepository.recordAttendance({
       sessionId,
       studentId,
       status,
-      confidence
+      confidence,
+      deviceId: generateId('DEV'),
+      createdById: user?.id
     });
   }
 
@@ -292,11 +297,14 @@ async openPrayerSession(
     prayerName: PrayerName
   ): Promise<AttendanceRecord> {
     const status = determineAutoStatusForPrayer(prayerConfig, prayerName);
+    const user = await authService.getCurrentUser();
     return attendanceRepository.recordAttendance({
       sessionId,
       studentId,
       status,
-      confidence
+      confidence,
+      deviceId: generateId('DEV'),
+      createdById: user?.id
     });
   }
 
@@ -306,7 +314,8 @@ async openPrayerSession(
     status: AttendanceStatus,
     confidence: number = 0
   ): Promise<AttendanceRecord> {
-    return attendanceRepository.recordAttendance({ sessionId, studentId, status, confidence });
+    const user = await authService.getCurrentUser();
+    return attendanceRepository.recordAttendance({ sessionId, studentId, status, confidence, deviceId: generateId('DEV'), createdById: user?.id });
   }
 
   async updateStatus(recordId: string, status: AttendanceStatus): Promise<AttendanceRecord> {

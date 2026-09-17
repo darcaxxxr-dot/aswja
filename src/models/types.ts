@@ -75,6 +75,7 @@ export interface AttendanceRecord {
   status: AttendanceStatus;
   confidence: number;
   deviceId?: string | null;
+  createdById?: string;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;

@@ -30,6 +30,8 @@ export interface RecordAttendanceInput {
   status: AttendanceStatus;
   timestamp?: number;
   confidence: number;
+  deviceId?: string;
+  createdById?: string;
 }
 
 /**
@@ -135,12 +137,13 @@ export class AttendanceRepository {
     return !!rec;
   }
 
-  async recordAttendance(input: RecordAttendanceInput): Promise<AttendanceRecord> {
+async recordAttendance(input: RecordAttendanceInput): Promise<AttendanceRecord> {
     const duplicate = await this.hasRecord(input.sessionId, input.studentId);
     if (duplicate) {
       throw new Error(`Siswa sudah diabsen pada sesi ini.`);
     }
     const ts = now();
+    const deviceId = input.deviceId ?? generateId('DEV');
     const row: AttendanceRecord = {
       id: generateId('ATT'),
       schoolId: requireActiveSchoolId(),
@@ -149,6 +152,8 @@ export class AttendanceRepository {
       timestamp: input.timestamp ?? ts,
       status: input.status,
       confidence: input.confidence,
+      deviceId,
+      createdById: input.createdById,
       createdAt: ts,
       updatedAt: ts
     };
@@ -168,7 +173,10 @@ export class AttendanceRepository {
   }
 
   async removeRecord(id: string): Promise<void> {
-    await db.attendanceRecords.delete(id);
+    const existing = await db.attendanceRecords.get(id);
+    if (!existing) throw new Error(`Record ${id} not found`);
+    await db.attendanceRecords.update(id, { deletedAt: now(), updatedAt: now() });
+    pushAsync();
   }
 
   /** NEW: Create a prayer session for a specific prayer */
